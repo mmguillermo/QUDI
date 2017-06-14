@@ -21,12 +21,13 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 import ctypes
+from collections import OrderedDict
 import numpy as np
 import os
+import visa
 
-from interface.pulser_interface import PulserInterface
+from interface.pulser_interface import PulserInterface, PulserConstraints
 from core.base import Base
-from core.util.mutex import Mutex
 
 
 class DTG5334(Base, PulserInterface):
@@ -77,7 +78,7 @@ class DTG5334(Base, PulserInterface):
 
         self.connected = True
 
-        self._model = self._get_model_ID()[1]
+        self._mfg, self._model, self._serial, self._fw = self._get_id()
         self.log.debug('Found the following model: {0}'.format(self._model))
 
         self.sample_rate = self.get_sample_rate()
@@ -341,7 +342,7 @@ class DTG5334(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        pass
+        return {}, {}
 
     def set_analog_level(self, amplitude=None, offset=None):
         """ Set amplitude and/or offset value of the provided analog channel(s).
@@ -371,7 +372,7 @@ class DTG5334(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        pass
+        return {}, {}
 
     def get_digital_level(self, low=None, high=None):
         """ Retrieve the digital low and high level of the provided/all channels.
@@ -403,7 +404,7 @@ class DTG5334(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        pass
+        return {}, {}
 
     def set_digital_level(self, low=None, high=None):
         """ Set low and/or high value of the provided digital channel.
@@ -432,7 +433,7 @@ class DTG5334(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        pass
+        return {}, {}
 
     def get_active_channels(self, ch=None):
         """ Get the active channels of the pulse generator hardware.
@@ -450,7 +451,7 @@ class DTG5334(Base, PulserInterface):
 
         If no parameter (or None) is passed to this method all channel states will be returned.
         """
-        pass
+        return {}
 
     def set_active_channels(self, ch=None):
         """ Set the active channels for the pulse generator hardware.
@@ -473,7 +474,7 @@ class DTG5334(Base, PulserInterface):
 
         The hardware itself has to handle, whether separate channel activation is possible.
         """
-        pass
+        return {}
 
     def get_uploaded_asset_names(self):
         """ Retrieve the names of all uploaded assets on the device.
@@ -483,7 +484,7 @@ class DTG5334(Base, PulserInterface):
 
         Unused for pulse generators without sequence storage capability (PulseBlaster, FPGA).
         """
-        pass
+        return []
 
     def get_saved_asset_names(self):
         """ Retrieve the names of all sampled and saved assets on the host PC. This is no list of
@@ -492,7 +493,7 @@ class DTG5334(Base, PulserInterface):
         @return list: List of all saved asset name strings in the current
                       directory of the host PC.
         """
-        pass
+        return []
 
     def delete_asset(self, asset_name):
         """ Delete all files associated with an asset with the passed asset_name from the device
@@ -505,7 +506,7 @@ class DTG5334(Base, PulserInterface):
 
         Unused for pulse generators without sequence storage capability (PulseBlaster, FPGA).
         """
-        pass
+        return[]
 
     def set_asset_dir_on_device(self, dir_path):
         """ Change the directory where the assets are stored on the device.
@@ -516,7 +517,7 @@ class DTG5334(Base, PulserInterface):
 
         Unused for pulse generators without changeable file structure (PulseBlaster, FPGA).
         """
-        pass
+        return 0
 
     def get_asset_dir_on_device(self):
         """ Ask for the directory where the hardware conform files are stored on the device.
@@ -525,7 +526,7 @@ class DTG5334(Base, PulserInterface):
 
         Unused for pulse generators without changeable file structure (i.e. PulseBlaster, FPGA).
         """
-        pass
+        return ''
 
     def get_interleave(self):
         """ Check whether Interleave is ON or OFF in AWG.
@@ -534,7 +535,7 @@ class DTG5334(Base, PulserInterface):
 
         Will always return False for pulse generator hardware without interleave.
         """
-        pass
+        return False
 
     def set_interleave(self, state=False):
         """ Turns the interleave of an AWG on or off.
@@ -549,7 +550,7 @@ class DTG5334(Base, PulserInterface):
 
         Unused for pulse generator hardware other than an AWG.
         """
-        pass
+        return False
 
     def tell(self, command):
         """ Sends a command string to the device.
@@ -558,7 +559,7 @@ class DTG5334(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        self.dtg.write(command)
 
     def ask(self, question):
         """ Asks the device a 'question' and receive and return an answer from it.
@@ -567,7 +568,7 @@ class DTG5334(Base, PulserInterface):
 
         @return string: the answer of the device to the 'question' in a string
         """
-        pass
+        self.dtg.query(question)
 
     def reset(self):
         """ Reset the device.
@@ -581,13 +582,13 @@ class DTG5334(Base, PulserInterface):
 
         @return: bool, True for yes, False for no.
         """
-        pass
+        return False
 
-    def _get_model_ID(self):
+    def _get_id(self):
         return self.dtg.query('*IDN?').replace('\n', '').split(',')
 
     def _is_output_on(self):
-        return int(self.dtg.query('')) == 1
+        return int(self.dtg.query('TBAS:RUN?')) == 1
 
     def _init_loaded_asset(self):
         pass
