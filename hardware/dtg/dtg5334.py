@@ -100,7 +100,7 @@ class DTG5334(Base, PulserInterface):
             self.dtg.close()
         except:
             self.log.debug('Closing DTG connection using pyvisa failed.')
-        self.log.info('Closed connection to DG')
+        self.log.info('Closed connection to DTG')
         self.connected = False
         return
 
@@ -139,30 +139,30 @@ class DTG5334(Base, PulserInterface):
         constraints.waveform_format = ['dtg']
         constraints.sequence_format = ['seq']
 
-        constraints.sample_rate.min = 10.0e6
-        constraints.sample_rate.max = 12.0e9
-        constraints.sample_rate.step = 10.0e6
+        constraints.sample_rate.min = 50e3
+        constraints.sample_rate.max = 3.35e9
+        constraints.sample_rate.step = 1e3
         constraints.sample_rate.default = 12.0e9
 
-        constraints.a_ch_amplitude.min = 0.02
-        constraints.a_ch_amplitude.max = 2.0
-        constraints.a_ch_amplitude.step = 0.001
-        constraints.a_ch_amplitude.default = 2.0
+        constraints.a_ch_amplitude.min = 0.0
+        constraints.a_ch_amplitude.max = 0.0
+        constraints.a_ch_amplitude.step = 0.0
+        constraints.a_ch_amplitude.default = 0.0
 
-        constraints.a_ch_offset.min = -1.0
-        constraints.a_ch_offset.max = 1.0
-        constraints.a_ch_offset.step = 0.001
+        constraints.a_ch_offset.min = 0.0
+        constraints.a_ch_offset.max = 0.0
+        constraints.a_ch_offset.step = 0.0
         constraints.a_ch_offset.default = 0.0
 
-        constraints.d_ch_low.min = -1.0
-        constraints.d_ch_low.max = 4.0
-        constraints.d_ch_low.step = 0.01
+        constraints.d_ch_low.min = -2.0
+        constraints.d_ch_low.max = 2.44
+        constraints.d_ch_low.step = 0.05
         constraints.d_ch_low.default = 0.0
 
-        constraints.d_ch_high.min = 0.0
-        constraints.d_ch_high.max = 5.0
-        constraints.d_ch_high.step = 0.01
-        constraints.d_ch_high.default = 5.0
+        constraints.d_ch_high.min = -1.0
+        constraints.d_ch_high.max = 2.47
+        constraints.d_ch_high.step = 0.05
+        constraints.d_ch_high.default = 2.4
 
         constraints.sampled_file_length.min = 80
         constraints.sampled_file_length.max = 64800000
@@ -209,7 +209,7 @@ class DTG5334(Base, PulserInterface):
         # channels. Here all possible channel configurations are stated, where only the generic
         # names should be used. The names for the different configurations can be customary chosen.
         activation_conf = OrderedDict()
-        activation_conf['all'] = ['d_ch1', 'd_ch2', 'd_ch3', 'd_ch4']
+        activation_conf['all'] = ['d_ch1', 'd_ch2', 'd_ch3', 'd_ch4', 'd_ch5', 'd_ch6', 'd_ch7', 'd_ch8']
         constraints.activation_config = activation_conf
         return constraints
 
@@ -218,14 +218,18 @@ class DTG5334(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        self.dtg.write('TBAS:RUN ON')
+        state = 0 if int(self.dtg.query('TBAS:RUN?')) == 1 else -1
+        return state
 
     def pulser_off(self):
         """ Switches the pulsing device off.
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        self.dtg.write('TBAS:RUN OFF')
+        state = 0 if int(self.dtg.query('TBAS:RUN?')) == 0 else -1
+        return state
 
     def upload_asset(self, asset_name=None):
         """ Upload an already hardware conform file to the device mass memory.
@@ -282,7 +286,7 @@ class DTG5334(Base, PulserInterface):
     def get_status(self):
         """ Retrieves the status of the pulsing hardware
 
-        @return (int, dict): tuple with an interger value of the current status and a corresponding
+        @return (int, dict): tuple with an integer value of the current status and a corresponding
                              dictionary containing status description for all the possible status
                              variables of the pulse generator hardware.
         """
@@ -296,7 +300,7 @@ class DTG5334(Base, PulserInterface):
         Do not return a saved sample rate from an attribute, but instead retrieve the current
         sample rate directly from the device.
         """
-        pass
+        return float(self.dtg.query('TBAS:FREQ?'))
 
     def set_sample_rate(self, sample_rate):
         """ Set the sample rate of the pulse generator hardware.
@@ -308,7 +312,8 @@ class DTG5334(Base, PulserInterface):
         Note: After setting the sampling rate of the device, use the actually set return value for
               further processing.
         """
-        pass
+        self.dtg.write('TBAS:FREQ {0:e}'.format(sample_rate))
+        return self.get_sample_rate()
 
     def get_analog_level(self, amplitude=None, offset=None):
         """ Retrieve the analog amplitude and offset of the provided channels.
@@ -582,7 +587,7 @@ class DTG5334(Base, PulserInterface):
 
         @return: bool, True for yes, False for no.
         """
-        return False
+        return True
 
     def _get_id(self):
         return self.dtg.query('*IDN?').replace('\n', '').split(',')
