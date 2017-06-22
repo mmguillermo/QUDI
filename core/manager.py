@@ -42,7 +42,7 @@ from collections import OrderedDict
 from .logger import register_exception_handler
 from .threadmanager import ThreadManager
 from .remote import RemoteObjectManager
-from .base import Base
+from .module import BaseMixin
 
 
 class Manager(QtCore.QObject):
@@ -333,27 +333,25 @@ class Manager(QtCore.QObject):
                                                ' nor list. Ignoring.')
                                 continue
                             # add specified directories
-                            for ii in range(len(dirnames)):
+                            for ii, dir_name in enumerate(dirnames):
                                 path = ''
                                 # absolute or relative path? Existing?
-                                if (os.path.isabs(dirnames[ii]) and
-                                        os.path.isdir(dirnames[ii])):
-                                    path = dirnames[ii]
+                                if (os.path.isabs(dir_name) and os.path.isdir(dir_name)):
+                                    path = dir_name
                                 else:
                                     # relative path?
                                     path = os.path.abspath(
                                         '{0}/{1}'.format(
                                             os.path.dirname(self.configFile),
-                                            dirnames[ii]))
-                                    if (not os.path.isdir(path)):
+                                            dir_name))
+                                    if not os.path.isdir(path):
                                         path = ''
-                                if (path == ''):
+                                if path == '':
                                     logger.warning(
                                         'Error while adding qudi '
                                         'extension: Directory \'{0}\' '
                                         'does not exist.'
-                                        ''.format(
-                                            cfg['global'][m][ii]))
+                                        ''.format(dir_name))
                                     continue
                                 # check for __init__.py files within extension
                                 # and issue warning if existing
@@ -565,7 +563,7 @@ class Manager(QtCore.QObject):
         modclass = getattr(moduleObject, className)
 
         # FIXME: Check if the class we just obtained has the right inheritance
-        if not issubclass(modclass, Base):
+        if not issubclass(modclass, BaseMixin):
             raise Exception('Bad inheritance, for instance {0!s} from {1!s}.{2!s}.'.format(
                 instanceName, baseName, className))
 
@@ -621,16 +619,20 @@ class Manager(QtCore.QObject):
                              'class.'.format(c, base, mkey))
                 continue
             if (not isinstance(connectors[c], OrderedDict)):
-                logger.error('Connector is no dictionary.')
+                logger.error('{0}.{1}.{2}: Connector is no dictionary.'
+                    ''.format(c, base, mkey))
                 continue
             if ('class' not in connectors[c]):
-                logger.error('No class key in connection declaration.')
+                logger.error('{0}.{1}.{2}: No class key in connection declaration.'
+                    ''.format(c, base, mkey))
                 continue
             if (not isinstance(connectors[c]['class'], str)):
-                logger.error('Value for class key is not a string.')
+                logger.error('{0}.{1}.{2}: Value {3} for class key is not a string.'
+                    ''.format(c, base, mkey, connectors[c]['class']))
                 continue
             if ('object' not in connectors[c]):
-                logger.error('No object key in connection declaration.')
+                logger.error('{0}.{1}.{2}: No object key in connection declaration.'
+                    ''.format(c, base, mkey))
                 continue
             if (connectors[c]['object'] is not None):
                 logger.warning('Connector {0}.{1}.{2} is already connected.'
@@ -891,11 +893,12 @@ class Manager(QtCore.QObject):
                 modthread.start()
                 success = QtCore.QMetaObject.invokeMethod(
                     module,
-                    "_wrap_activation",
+                    "trigger",
                     QtCore.Qt.BlockingQueuedConnection,
-                    QtCore.Q_RETURN_ARG(bool))
+                    QtCore.Q_RETURN_ARG(bool),
+                    QtCore.Q_ARG(str, 'activate'))
             else:
-                success = module._wrap_activation()
+                success = module.activate() # runs on_activate in main thread
             logger.debug('Activation success: {}'.format(success))
         except:
             logger.exception(
@@ -930,9 +933,11 @@ class Manager(QtCore.QObject):
             if base == 'logic':
                 success = QtCore.QMetaObject.invokeMethod(
                     module,
-                    '_wrap_deactivation',
+                    "trigger",
                     QtCore.Qt.BlockingQueuedConnection,
-                    QtCore.Q_RETURN_ARG(bool))
+                    QtCore.Q_RETURN_ARG(bool),
+                    QtCore.Q_ARG(str, 'deactivate'))
+
                 QtCore.QMetaObject.invokeMethod(
                     module,
                     'moveToThread',
@@ -941,7 +946,8 @@ class Manager(QtCore.QObject):
                 self.tm.quitThread('mod-{0}-{1}'.format(base, name))
                 self.tm.joinThread('mod-{0}-{1}'.format(base, name))
             else:
-                success = module._wrap_deactivation()
+                success = module.deactivate() # runs on_deactivate in main thread
+
             self.saveStatusVariables(base, name, module.getStatusVariables())
             logger.debug('Deactivation success: {}'.format(success))
         except:

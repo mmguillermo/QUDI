@@ -20,19 +20,20 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 
-from qtpy import QtCore
-from qtpy import QtWidgets
-from qtpy import uic
-import pyqtgraph as pg
 import numpy as np
 import os
+import pyqtgraph as pg
 
+from core.module import Connector
+from core.util import units
 from gui.guibase import GUIBase
 from gui.guiutils import ColorBar
 from gui.colordefs import ColorScaleInferno
 from gui.colordefs import QudiPalettePale as palette
 from gui.fitsettings import FitSettingsDialog, FitSettingsComboBox
-from core.util import units
+from qtpy import QtCore
+from qtpy import QtWidgets
+from qtpy import uic
 
 
 class ODMRMainWindow(QtWidgets.QMainWindow):
@@ -71,8 +72,8 @@ class ODMRGui(GUIBase):
     _modtype = 'gui'
 
     # declare connectors
-    _connectors = {'odmrlogic1': 'ODMRLogic',
-           'savelogic': 'SaveLogic'}
+    odmrlogic1 = Connector(interface_name='ODMRLogic')
+    savelogic = Connector(interface_name='SaveLogic')
 
     sigStartOdmrScan = QtCore.Signal()
     sigStopOdmrScan = QtCore.Signal()
@@ -92,12 +93,6 @@ class ODMRGui(GUIBase):
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
-
-        self.log.info('The following configuration was found.')
-
-        # checking for the right configuration
-        for key in config.keys():
-            self.log.info('{0}: {1}'.format(key, config[key]))
 
     def on_activate(self):
         """ Definition, configuration and initialisation of the ODMR GUI.
@@ -410,7 +405,7 @@ class ODMRGui(GUIBase):
         return
 
     def update_status(self, mw_mode, is_running):
-        """ 
+        """
         Update the display for a change in the microwave status (mode and output).
 
         @param str mw_mode: is the microwave output active?
@@ -507,16 +502,16 @@ class ODMRGui(GUIBase):
         return
 
     def update_colorbar(self, cb_range):
-        """ 
+        """
         Update the colorbar to a new range.
-        
+
         @param list cb_range: List or tuple containing the min and max values for the cb range
         """
         self.odmr_cb.refresh_colorbar(cb_range[0], cb_range[1])
         return
 
     def get_matrix_cb_range(self):
-        """ 
+        """
         Determines the cb_min and cb_max values for the matrix plot
         """
         matrix_image = self.odmr_matrix_image.image
