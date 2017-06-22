@@ -27,7 +27,7 @@ import os
 import visa
 
 from interface.pulser_interface import PulserInterface, PulserConstraints
-from core.base import Base
+from core.module import Base, ConfigOption
 
 
 class DTG5334(Base, PulserInterface):
@@ -37,15 +37,12 @@ class DTG5334(Base, PulserInterface):
     _modclass = 'dtg5334'
     _modtype = 'hardware'
 
+    visa_address = ConfigOption('awg_visa_address', missing='error')
+    
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
         config = self.getConfiguration()
-
-        if 'visa_address' in config.keys():
-            self.visa_address = config['visa_address']
-        else:
-            self.log.error('This is DTG: Did not find >>awg_visa_address<< in configuration.')
 
         if 'pulsed_file_dir' in config.keys():
             self.pulsed_file_dir = config['pulsed_file_dir']
@@ -64,7 +61,9 @@ class DTG5334(Base, PulserInterface):
                              'default home directory\n{0}\nwill be taken instead.'
                              ''.format(self.pulsed_file_dir))
 
+        # connect to DTG
         self._rm = visa.ResourceManager()
+
         if self.visa_address not in self._rm.list_resources():
             self.log.error('VISA address "{0}" not found by the pyVISA resource manager.\nCheck '
                            'the connection by using for example "Agilent Connection Expert".'
@@ -89,7 +88,6 @@ class DTG5334(Base, PulserInterface):
         self.active_channel = self.get_active_channels()
         self.interleave = self.get_interleave()
         self.current_loaded_asset = ''
-        self._init_loaded_asset()
         self.current_status = 0
 
     def on_deactivate(self):
@@ -316,66 +314,12 @@ class DTG5334(Base, PulserInterface):
         return self.get_sample_rate()
 
     def get_analog_level(self, amplitude=None, offset=None):
-        """ Retrieve the analog amplitude and offset of the provided channels.
-
-        @param list amplitude: optional, if the amplitude value (in Volt peak to peak, i.e. the
-                               full amplitude) of a specific channel is desired.
-        @param list offset: optional, if the offset value (in Volt) of a specific channel is
-                            desired.
-
-        @return: (dict, dict): tuple of two dicts, with keys being the channel descriptor string
-                               (i.e. 'a_ch1') and items being the values for those channels.
-                               Amplitude is always denoted in Volt-peak-to-peak and Offset in volts.
-
-        Note: Do not return a saved amplitude and/or offset value but instead retrieve the current
-              amplitude and/or offset directly from the device.
-
-        If nothing (or None) is passed then the levels of all channels will be returned. If no
-        analog channels are present in the device, return just empty dicts.
-
-        Example of a possible input:
-            amplitude = ['a_ch1', 'a_ch4'], offset = None
-        to obtain the amplitude of channel 1 and 4 and the offset of all channels
-            {'a_ch1': -0.5, 'a_ch4': 2.0} {'a_ch1': 0.0, 'a_ch2': 0.0, 'a_ch3': 1.0, 'a_ch4': 0.0}
-
-        The major difference to digital signals is that analog signals are always oscillating or
-        changing signals, otherwise you can use just digital output. In contrast to digital output
-        levels, analog output levels are defined by an amplitude (here total signal span, denoted in
-        Voltage peak to peak) and an offset (a value around which the signal oscillates, denoted by
-        an (absolute) voltage).
-
-        In general there is no bijective correspondence between (amplitude, offset) and
-        (value high, value low)!
+        """ Device has no analog channels.
         """
         return {}, {}
 
     def set_analog_level(self, amplitude=None, offset=None):
-        """ Set amplitude and/or offset value of the provided analog channel(s).
-
-        @param dict amplitude: dictionary, with key being the channel descriptor string
-                               (i.e. 'a_ch1', 'a_ch2') and items being the amplitude values
-                               (in Volt peak to peak, i.e. the full amplitude) for the desired
-                               channel.
-        @param dict offset: dictionary, with key being the channel descriptor string
-                            (i.e. 'a_ch1', 'a_ch2') and items being the offset values
-                            (in absolute volt) for the desired channel.
-
-        @return (dict, dict): tuple of two dicts with the actual set values for amplitude and
-                              offset for ALL channels.
-
-        If nothing is passed then the command will return the current amplitudes/offsets.
-
-        Note: After setting the amplitude and/or offset values of the device, use the actual set
-              return values for further processing.
-
-        The major difference to digital signals is that analog signals are always oscillating or
-        changing signals, otherwise you can use just digital output. In contrast to digital output
-        levels, analog output levels are defined by an amplitude (here total signal span, denoted in
-        Voltage peak to peak) and an offset (a value around which the signal oscillates, denoted by
-        an (absolute) voltage).
-
-        In general there is no bijective correspondence between (amplitude, offset) and
-        (value high, value low)!
+        """ Device has no analog channels.
         """
         return {}, {}
 
@@ -573,14 +517,14 @@ class DTG5334(Base, PulserInterface):
 
         @return string: the answer of the device to the 'question' in a string
         """
-        self.dtg.query(question)
+        return self.dtg.query(question)
 
     def reset(self):
         """ Reset the device.
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        self.dtg.write('*RST')
 
     def has_sequence_mode(self):
         """ Asks the pulse generator whether sequence mode exists.
@@ -595,5 +539,97 @@ class DTG5334(Base, PulserInterface):
     def _is_output_on(self):
         return int(self.dtg.query('TBAS:RUN?')) == 1
 
-    def _init_loaded_asset(self):
-        pass
+    def direct_write_ensemble(self, ensemble_name, analog_samples, digital_samples):
+        """
+        @param ensemble_name: Name for the waveform to be created.
+        @param analog_samples:  numpy.ndarray of type float32 containing the voltage samples.
+        @param digital_samples: numpy.ndarray of type bool containing the marker states for each
+                                sample.
+                                First dimension is marker index; second dimension is sample number
+        @return:
+        """
+        # check input
+        if not ensemble_name:
+            self.log.error('Please specify an ensemble name for direct waveform creation.')
+            return -1
+
+        if type(digital_samples).__name__ != 'ndarray':
+            self.log.warning('Digital samples for direct waveform creation have wrong data type.\n'
+                             'Converting to numpy.ndarray of type bool.')
+            digital_samples = np.array(digital_samples, dtype=bool)
+
+        min_samples = int(self.awg.query('WLIS:WAV:LMIN?'))
+        if digital_samples.shape[1] < min_samples:
+            self.log.error('Minimum waveform length for AWG70000A series is {0} samples.\n'
+                           'Direct waveform creation failed.'.format(min_samples))
+            return -1
+
+        # determine active channels
+        activation_dict = self.get_active_channels()
+        active_chnl = [chnl for chnl in activation_dict if activation_dict[chnl]]
+        active_digital = [chnl for chnl in active_chnl if 'd_ch' in chnl]
+        active_digital.sort()
+
+        # Sanity check of channel numbers
+        if len(active_digital) != digital_samples.shape[0]:
+            self.log.error(
+                'Mismatch of channel activation and sample array dimensions for direct '
+                'write.\nChannel activation is: {} digital.\n'
+                'Sample arrays have: {} digital.'
+                ''.format(len(active_digital), digital_samples.shape[0]))
+            return -1
+
+    def direct_write_sequence(self, sequence_name, sequence_params):
+        """
+        @param sequence_name:
+        @param sequence_params:
+
+        @return:
+        """
+        num_steps = len(sequence_params)
+
+        # Check if sequence already exists and delete if necessary.
+        if sequence_name in self._get_sequence_names_memory():
+            self.awg.write('SEQ:DEL "{0}"'.format(sequence_name))
+
+
+
+    break_len = 1000 # length of the macrobreak
+    break_entry = numpy.array([int(break_len)])
+    blocks_tree = []
+    patterns_tree = []
+    sequence_tree = []
+    for i, block in enumerate(blocks):
+        blocks_tree.extend( gen_block(block.length, i+1, numpy.array(block.name + '\x00', dtype='|S')) )
+        pulses = numpy.array([], dtype=numpy.int8)
+        for channels, length in block.sequence:
+            pulses = numpy.append(pulses, ChannelsToInt(channels)*numpy.ones((1,length), dtype=numpy.int8))
+        patterns_tree.extend( gen_pattern(i+1, pulses) )
+        
+    binary_pattern = []
+    binary_pattern.extend(blocks_tree)
+    binary_pattern.extend(sequence_tree)
+    binary_pattern.extend(patterns_tree)
+    dtgfile = DtgIO.load_scaffold()
+    view = dtgfile[-1][-1].pop()
+    for node in binary_pattern:
+        dtgfile[-1][-1].append(node)
+    dtgfile[-1][-1].append(view)
+    dtgfile = DtgIO.recalculate_space(dtgfile)[1]
+    
+    fil = open(pi3d.dtgfile_seq_dis, 'wb')
+    DtgIO.dump_tree(dtgfile, fil)
+    fil.close()
+    fil = open(pi3d.dtgfile_cur_loc, 'wb')
+    DtgIO.dump_tree(dtgfile, fil)
+    fil.close()
+    DTG.write("MMEM:LOAD \""+pi3d.dtgfile_seq_dis_loc+"\"")    
+    Run()
+
+
+        # Wait for everything to complete
+        while int(self.awg.query('*OPC?')) != 1:
+            time.sleep(0.2)
+        return 0
+
+
