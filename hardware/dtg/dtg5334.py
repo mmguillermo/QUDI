@@ -24,6 +24,7 @@ import ctypes
 from collections import OrderedDict
 import numpy as np
 import os
+import time
 import visa
 
 from interface.pulser_interface import PulserInterface, PulserConstraints
@@ -37,8 +38,23 @@ class DTG5334(Base, PulserInterface):
     _modclass = 'dtg5334'
     _modtype = 'hardware'
 
-    visa_address = ConfigOption('awg_visa_address', missing='error')
-    
+    visa_address = ConfigOption('visa_address', missing='error')
+
+    ch_map = {
+        'd_ch1': ('A', 1),
+        'd_ch2': ('A', 2),
+        'd_ch3': ('B', 1),
+        'd_ch4': ('B', 2),
+        'd_ch5': ('C', 1),
+        'd_ch6': ('C', 2),
+        'd_ch7': ('D', 1),
+        'd_ch8': ('D', 2)
+    }
+
+    stb_values = {
+        0: 'Wat'
+    }
+
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
@@ -279,7 +295,8 @@ class DTG5334(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        self.dtg.write('GROUP:DEL:ALL;*WAI')
+        self.dtg.write('BLOC:DEL:ALL;*WAI')
 
     def get_status(self):
         """ Retrieves the status of the pulsing hardware
@@ -288,7 +305,8 @@ class DTG5334(Base, PulserInterface):
                              dictionary containing status description for all the possible status
                              variables of the pulse generator hardware.
         """
-        pass
+        status = 0
+        return status, self.stb_values
 
     def get_sample_rate(self):
         """ Get the sample rate of the pulse generator hardware
@@ -353,7 +371,15 @@ class DTG5334(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        return {}, {}
+        if low is None:
+            low = self.get_constraints().activation_config['all']
+        if high is None:
+            high = self.get_constraints().activation_config['all']
+
+        ch_low = {chan: float(self.dtg.query('PGEN{0}:CH{1}:LOW?'.format(*(self.ch_map[chan])))) for chan in low}
+        ch_high = {chan: float(self.dtg.query('PGEN{0}:CH{1}:HIGH?'.format(*(self.ch_map[chan])))) for chan in high}
+
+        return ch_high, ch_low
 
     def set_digital_level(self, low=None, high=None):
         """ Set low and/or high value of the provided digital channel.
@@ -382,7 +408,20 @@ class DTG5334(Base, PulserInterface):
         In general there is no bijective correspondence between (amplitude, offset) and
         (value high, value low)!
         """
-        return {}, {}
+        if low is None:
+            low = {}
+        if high is None:
+            high = {}
+
+        for chan, level in low.items():
+            gen, gen_ch = self.ch_map[chan]
+            self.dtg.write('PGEN{0}:CH{1}:LOW {2}'.format(gen, gen_ch, level))
+
+        for chan, level in high.items():
+            gen, gen_ch = self.ch_map[chan]
+            self.dtg.write('PGEN{0}:CH{1}:HIGH {2}'.format(gen, gen_ch, level))
+
+        return self.get_digital_level()
 
     def get_active_channels(self, ch=None):
         """ Get the active channels of the pulse generator hardware.
@@ -400,7 +439,13 @@ class DTG5334(Base, PulserInterface):
 
         If no parameter (or None) is passed to this method all channel states will be returned.
         """
-        return {}
+        if ch is None:
+            chan_list = self.get_constraints().activation_config['all']
+
+        active_ch = {
+            chan: int(self.dtg.query('PGEN{0}:CH{1}:OUTP?'.format(*(self.ch_map[chan])))) == 1 for chan in chan_list}
+
+        return active_ch
 
     def set_active_channels(self, ch=None):
         """ Set the active channels for the pulse generator hardware.
@@ -423,7 +468,12 @@ class DTG5334(Base, PulserInterface):
 
         The hardware itself has to handle, whether separate channel activation is possible.
         """
-        return {}
+        for chan, state in ch.items():
+            gen, gen_ch = self.ch_map[chan]
+            b_state = 1 if state else 0
+            self.dtg.write('PGEN{0}:CH{1}:OUTP {2}'.format(gen, gen_ch, b_state))
+
+        return self.get_active_channels()
 
     def get_uploaded_asset_names(self):
         """ Retrieve the names of all uploaded assets on the device.
@@ -590,42 +640,46 @@ class DTG5334(Base, PulserInterface):
 
         # Check if sequence already exists and delete if necessary.
         if sequence_name in self._get_sequence_names_memory():
-            self.awg.write('SEQ:DEL "{0}"'.format(sequence_name))
+            self.dtg.write('SEQ:DEL "{0}"'.format(sequence_name))
 
 
+        break_len = 1000 # length of the macrobreak
+        break_entry = np.array([int(break_len)])
+        blocks_tree = []
+        patterns_tree = []
+        sequence_tree = []
 
-    break_len = 1000 # length of the macrobreak
-    break_entry = numpy.array([int(break_len)])
-    blocks_tree = []
-    patterns_tree = []
-    sequence_tree = []
-    for i, block in enumerate(blocks):
-        blocks_tree.extend( gen_block(block.length, i+1, numpy.array(block.name + '\x00', dtype='|S')) )
-        pulses = numpy.array([], dtype=numpy.int8)
-        for channels, length in block.sequence:
-            pulses = numpy.append(pulses, ChannelsToInt(channels)*numpy.ones((1,length), dtype=numpy.int8))
-        patterns_tree.extend( gen_pattern(i+1, pulses) )
-        
-    binary_pattern = []
-    binary_pattern.extend(blocks_tree)
-    binary_pattern.extend(sequence_tree)
-    binary_pattern.extend(patterns_tree)
-    dtgfile = DtgIO.load_scaffold()
-    view = dtgfile[-1][-1].pop()
-    for node in binary_pattern:
-        dtgfile[-1][-1].append(node)
-    dtgfile[-1][-1].append(view)
-    dtgfile = DtgIO.recalculate_space(dtgfile)[1]
-    
-    fil = open(pi3d.dtgfile_seq_dis, 'wb')
-    DtgIO.dump_tree(dtgfile, fil)
-    fil.close()
-    fil = open(pi3d.dtgfile_cur_loc, 'wb')
-    DtgIO.dump_tree(dtgfile, fil)
-    fil.close()
-    DTG.write("MMEM:LOAD \""+pi3d.dtgfile_seq_dis_loc+"\"")    
-    Run()
+        for i, block in enumerate(blocks):
+            blocks_tree.extend(gen_block(block.length, i+1, np.array(block.name + '\x00', dtype='|S')) )
+            pulses = np.array([], dtype=numpy.int8)
 
+            for channels, length in block.sequence:
+                pulses = np.append(pulses, ChannelsToInt(channels) * np.ones((1, length), dtype=np.int8))
+            patterns_tree.extend(gen_pattern(i+1, pulses))
+
+        binary_pattern = []
+        binary_pattern.extend(blocks_tree)
+        binary_pattern.extend(sequence_tree)
+        binary_pattern.extend(patterns_tree)
+
+        dtgfile = DtgIO.load_scaffold()
+        view = dtgfile[-1][-1].pop()
+
+        for node in binary_pattern:
+            dtgfile[-1][-1].append(node)
+        dtgfile[-1][-1].append(view)
+
+        dtgfile = DtgIO.recalculate_space(dtgfile)[1]
+
+        fil = open(pi3d.dtgfile_seq_dis, 'wb')
+        DtgIO.dump_tree(dtgfile, fil)
+        fil.close()
+
+        fil = open(pi3d.dtgfile_cur_loc, 'wb')
+        DtgIO.dump_tree(dtgfile, fil)
+        fil.close()
+
+        self.dtg.write('MMEM:LOAD \"{0}\"'.format(pi3d.dtgfile_seq_dis_loc))
 
         # Wait for everything to complete
         while int(self.awg.query('*OPC?')) != 1:
