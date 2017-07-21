@@ -47,7 +47,12 @@ class ODMRLogic(GenericLogic):
     savelogic = Connector(interface='SaveLogic')
     taskrunner = Connector(interface='TaskRunner')
 
-    _mw_scanmode = ConfigOption('scanmode', 'LIST', missing='warn')
+    # config option
+    mw_scanmode = ConfigOption(
+                    'scanmode',
+                    'LIST',
+                    missing='warn',
+                    converter=lambda x: MicrowaveMode[x.upper()])
 
     clock_frequency = StatusVar('clock_frequency', 200)
     cw_mw_frequency = StatusVar('cw_mw_frequency', 2870e6)
@@ -58,7 +63,7 @@ class ODMRLogic(GenericLogic):
     mw_step = StatusVar('mw_step', 2e6)
     run_time = StatusVar('run_time', 60)
     number_of_lines = StatusVar('number_of_lines', 50)
-    fitcontainer = StatusVar('fits', None)
+    fc = StatusVar('fits', None)
 
     # Internal signals
     sigNextLine = QtCore.Signal()
@@ -100,16 +105,6 @@ class ODMRLogic(GenericLogic):
         # theoretically this can be changed, but the current counting scheme will not support that
         self.mw_trigger_pol = TriggerEdge.RISING
         self.set_trigger_pol(self.mw_trigger_pol)
-
-        # Get scanmode from config. Currently only sweep and list is allowed
-        if 'sweep' in self._mw_scanmode.lower():
-            self.mw_scanmode = MicrowaveMode.SWEEP
-        elif 'list' in self._mw_scanmode.lower():
-            self.mw_scanmode = MicrowaveMode.LIST
-        else:
-            self.mw_scanmode = MicrowaveMode.LIST
-            self.log.error('Specified scanmode "{0}" not valid. Choose "list" or "sweep".\n'
-                           'Falling back to list mode.'.format(self._mw_scanmode))
 
         # Elapsed measurement time and number of sweeps
         self.elapsed_time = 0.0
@@ -154,7 +149,7 @@ class ODMRLogic(GenericLogic):
         # Disconnect signals
         self.sigNextLine.disconnect()
 
-    @fitcontainer.setter
+    @fc.constructor
     def sv_set_fits(self, val):
         # Setup fit container
         fc = self.fitlogic().make_fit_container('ODMR sum', '1d')
@@ -186,13 +181,13 @@ class ODMRLogic(GenericLogic):
             default_fits = OrderedDict()
             default_fits['1d'] = d1
             fc.load_from_dict(default_fits)
-        self.fc = fc
+        return fc
 
-    @fitcontainer.getter
-    def sv_get_fits(self):
+    @fc.representer
+    def sv_get_fits(self, val):
         """ save configured fits """
-        if len(self.fc.fit_list) > 0:
-            return self.fc.save_to_dict()
+        if len(val.fit_list) > 0:
+            return val.save_to_dict()
         else:
             return None
 
@@ -707,7 +702,8 @@ class ODMRLogic(GenericLogic):
         data2['count data (counts/s)'] = self.odmr_raw_data[:self.elapsed_sweeps, :]
 
         parameters = OrderedDict()
-        parameters['Microwave Power (dBm)'] = self.mw_power
+        parameters['Microwave CW Power (dBm)'] = self.cw_mw_power
+        parameters['Microwave Sweep Power (dBm)'] = self.sweep_mw_power
         parameters['Run Time (s)'] = self.run_time
         parameters['Number of frequency sweeps (#)'] = self.elapsed_sweeps
         parameters['Start Frequency (Hz)'] = self.mw_start
