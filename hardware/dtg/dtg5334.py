@@ -259,7 +259,7 @@ class DTG5334(Base, PulserInterface):
         This method has no effect when using pulser hardware without own mass memory
         (i.e. PulseBlaster, FPGA)
         """
-        pass
+        return 0
 
     def load_asset(self, asset_name, load_dict=None):
         """ Loads a sequence or waveform to the specified channel of the pulsing device.
@@ -293,7 +293,7 @@ class DTG5334(Base, PulserInterface):
 
         @return str: Name of the current asset ready to play. (no filename)
         """
-        pass
+        return ''
 
     def clear_all(self):
         """ Clears all loaded waveforms from the pulse generators RAM/workspace.
@@ -302,6 +302,7 @@ class DTG5334(Base, PulserInterface):
         """
         self.dtg.write('GROUP:DEL:ALL;*WAI')
         self.dtg.write('BLOC:DEL:ALL;*WAI')
+        return 0
 
     def get_status(self):
         """ Retrieves the status of the pulsing hardware
@@ -613,7 +614,7 @@ class DTG5334(Base, PulserInterface):
                              'Converting to numpy.ndarray of type bool.')
             digital_samples = np.array(digital_samples, dtype=bool)
 
-        min_samples = int(self.awg.query('WLIS:WAV:LMIN?'))
+        min_samples = 100
         if digital_samples.shape[1] < min_samples:
             self.log.error('Minimum waveform length for AWG70000A series is {0} samples.\n'
                            'Direct waveform creation failed.'.format(min_samples))
@@ -675,7 +676,7 @@ class DTG5334(Base, PulserInterface):
         while dlen >= max_blocksize:
             end = start + max_blocksize
             datstr = ''.join(map(lambda x: str(int(x)), data[start:end]))
-            print('loop', dlen, len(datstr))
+            print(channel, 'loop', dlen, len(datstr))
             self.dtg.write('PGEN{0}:CH{1}:DATA {2},{3},"{4}"'.format(
                 c[0], c[1], start, end - start, datstr))
             dlen -= end - start
@@ -683,7 +684,7 @@ class DTG5334(Base, PulserInterface):
 
         end = start + dlen
         datstr = ''.join(map(lambda x: str(int(x)), data[start:end]))
-        print('end', len(datstr))
+        print(channel, 'end', len(datstr))
         self.dtg.write('PGEN{0}:CH{1}:DATA {2},{3},"{4}"'.format(
             c[0], c[1], start, end - start, datstr))
 
