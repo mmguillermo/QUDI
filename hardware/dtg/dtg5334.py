@@ -281,7 +281,12 @@ class DTG5334(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        pass
+        #asset_dir = self.get_asset_dir_on_device()
+        #self.dtg.write('MMEM:LOAD \"{0}\"'.format(os.path.join(asset_dir, asset_name)))
+        ## Wait for everything to complete
+        #while int(self.awg.query('*OPC?')) != 1:
+        #    time.sleep(0.2)
+        return 0
 
     def get_loaded_asset(self):
         """ Retrieve the currently loaded asset name of the device.
@@ -619,6 +624,7 @@ class DTG5334(Base, PulserInterface):
         active_chnl = [chnl for chnl in activation_dict if activation_dict[chnl]]
         active_digital = [chnl for chnl in active_chnl if 'd_ch' in chnl]
         active_digital.sort()
+        print(active_digital)
 
         # Sanity check of channel numbers
         if len(active_digital) != digital_samples.shape[0]:
@@ -628,6 +634,58 @@ class DTG5334(Base, PulserInterface):
                 'Sample arrays have: {} digital.'
                 ''.format(len(active_digital), digital_samples.shape[0]))
             return -1
+
+        self._block_new(ensemble_name, digital_samples.shape[1])
+        print(self.dtg.query('BLOC:SEL?'))
+        self._block_write(ensemble_name, digital_samples)
+
+    def _block_length(self, name):
+        return int(self.dtg.query('BLOC:LENG? "{0}"'.format(name)))
+
+    def _block_exists(self, name):
+        return self._block_length(name) != -1
+
+    def _block_delete(self, name):
+        self.dtg.write('BLOC:DEL "{0}"'.format(name))
+
+    def _block_new(self, name, length):
+        if self._block_exists(name):
+            self._block_delete(name)
+
+        self.dtg.write('BLOC:NEW "{0}", {1}'.format(name, length))
+        self.dtg.query('*OPC?')
+        self.dtg.write('BLOC:SEL "{0}"'.format(name))
+        self.dtg.query('*OPC?')
+
+    def _block_write(self, name, digital_samples):
+        self.dtg.write('BLOC:SEL "{0}"'.format(name))
+
+        for ch, data in enumerate(digital_samples):
+            self._channel_write('d_ch{0}'.format(ch + 1), data)
+
+        self.dtg.query('*OPC?')
+
+    def _channel_write(self, channel, data):
+        c = self.ch_map[channel]
+        max_blocksize = 1024 * 1024
+        dlen = len(data)
+        start = 0
+
+        # when there is more than 1MB of data to transfer, split it up
+        while dlen >= max_blocksize:
+            end = start + max_blocksize
+            datstr = ''.join(map(lambda x: str(int(x)), data[start:end]))
+            print('loop', dlen, len(datstr))
+            self.dtg.write('PGEN{0}:CH{1}:DATA {2},{3},"{4}"'.format(
+                c[0], c[1], start, end - start, datstr))
+            dlen -= end - start
+            start = end
+
+        end = start + dlen
+        datstr = ''.join(map(lambda x: str(int(x)), data[start:end]))
+        print('end', len(datstr))
+        self.dtg.write('PGEN{0}:CH{1}:DATA {2},{3},"{4}"'.format(
+            c[0], c[1], start, end - start, datstr))
 
     def direct_write_sequence(self, sequence_name, sequence_params):
         """
@@ -640,46 +698,7 @@ class DTG5334(Base, PulserInterface):
 
         # Check if sequence already exists and delete if necessary.
         if sequence_name in self._get_sequence_names_memory():
-            self.dtg.write('SEQ:DEL "{0}"'.format(sequence_name))
-
-
-        break_len = 1000 # length of the macrobreak
-        break_entry = np.array([int(break_len)])
-        blocks_tree = []
-        patterns_tree = []
-        sequence_tree = []
-
-        for i, block in enumerate(blocks):
-            blocks_tree.extend(gen_block(block.length, i+1, np.array(block.name + '\x00', dtype='|S')) )
-            pulses = np.array([], dtype=numpy.int8)
-
-            for channels, length in block.sequence:
-                pulses = np.append(pulses, ChannelsToInt(channels) * np.ones((1, length), dtype=np.int8))
-            patterns_tree.extend(gen_pattern(i+1, pulses))
-
-        binary_pattern = []
-        binary_pattern.extend(blocks_tree)
-        binary_pattern.extend(sequence_tree)
-        binary_pattern.extend(patterns_tree)
-
-        dtgfile = DtgIO.load_scaffold()
-        view = dtgfile[-1][-1].pop()
-
-        for node in binary_pattern:
-            dtgfile[-1][-1].append(node)
-        dtgfile[-1][-1].append(view)
-
-        dtgfile = DtgIO.recalculate_space(dtgfile)[1]
-
-        fil = open(pi3d.dtgfile_seq_dis, 'wb')
-        DtgIO.dump_tree(dtgfile, fil)
-        fil.close()
-
-        fil = open(pi3d.dtgfile_cur_loc, 'wb')
-        DtgIO.dump_tree(dtgfile, fil)
-        fil.close()
-
-        self.dtg.write('MMEM:LOAD \"{0}\"'.format(pi3d.dtgfile_seq_dis_loc))
+            self.dtg.write('BLOC:DEL "{0}"'.format(sequence_name))
 
         # Wait for everything to complete
         while int(self.awg.query('*OPC?')) != 1:
