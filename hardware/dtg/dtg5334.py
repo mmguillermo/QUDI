@@ -232,6 +232,7 @@ class DTG5334(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        self.dtg.write('OUTP:STAT:ALL ON;*WAI')
         self.dtg.write('TBAS:RUN ON')
         state = 0 if int(self.dtg.query('TBAS:RUN?')) == 1 else -1
         return state
@@ -241,6 +242,7 @@ class DTG5334(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        self.dtg.write('OUTP:STAT:ALL OFF;*WAI')
         self.dtg.write('TBAS:RUN OFF')
         state = 0 if int(self.dtg.query('TBAS:RUN?')) == 0 else -1
         return state
@@ -614,9 +616,9 @@ class DTG5334(Base, PulserInterface):
                              'Converting to numpy.ndarray of type bool.')
             digital_samples = np.array(digital_samples, dtype=bool)
 
-        min_samples = 100
+        min_samples = 960
         if digital_samples.shape[1] < min_samples:
-            self.log.error('Minimum waveform length for AWG70000A series is {0} samples.\n'
+            self.log.error('Minimum waveform length for DTG5334 series is {0} samples.\n'
                            'Direct waveform creation failed.'.format(min_samples))
             return -1
 
@@ -698,12 +700,48 @@ class DTG5334(Base, PulserInterface):
         num_steps = len(sequence_params)
 
         # Check if sequence already exists and delete if necessary.
-        if sequence_name in self._get_sequence_names_memory():
-            self.dtg.write('BLOC:DEL "{0}"'.format(sequence_name))
+        #if sequence_name in self._get_sequence_names_memory():
+        #    self.dtg.write('BLOC:DEL "{0}"'.format(sequence_name))
+
+        self._set_sequence_length(num_steps)
+        for line_nr, param in enumerate(sequence_params):
+            print(line_nr, param)
+            self._set_sequence_line(
+                line_nr,
+                '""',
+                param['trigger_wait'],
+                param['name'],
+                param['repetitions'],
+                param['event_jump_to'],
+                param['go_to']
+            )
 
         # Wait for everything to complete
         while int(self.awg.query('*OPC?')) != 1:
             time.sleep(0.2)
         return 0
 
+    def _get_sequence_line(self, line_nr):
+        fields = self.dtg.query('SEQ:DATA? {0}'.format(line_nr)).split(', ')
+        print(fields)
+        label, trigger, block, repeat, jump, goto = fields
+        return (
+            label.strip('"'),
+            int(trigger),
+            block.strip('"'),
+            int(repeat),
+            jump.strip('"'),
+            goto.strip('"')
+        )
 
+    def _set_sequence_line(self, line_nr, label, trigger, block, repeat, jump, goto):
+        print(line_nr, label, trigger, block, repeat, jump, goto)
+        self.dtg.write('SEQ:DATA {0}, "{1}", {2}, "{3}", {4}, "{5}", "{6}"'.format(
+            line_nr, label, trigger, block, repeat, jump, goto
+        ))
+
+    def _get_sequence_length(self):
+        return int(self.dtg.query('SEQ:LENG?'))
+
+    def _set_sequence_length(self, length):
+        self.dtg.write('SEQ:LENG {0}'.format(length))
