@@ -958,6 +958,8 @@ class SequenceGeneratorLogic(GenericLogic, SamplingFunctions, SamplesWriteMethod
                 # the temp_dict is a format how the sequence parameter will be saved
                 temp_dict = dict()
                 name_list = []
+                if len(ana_chnl_num) == 0:
+                    name_list.append(name_tag + '.' + self.waveform_format)
                 for ch_num in ana_chnl_num:
                     name_list.append(name_tag + '_ch' + str(ch_num) + '.' + self.waveform_format)
                 temp_dict['name'] = name_list
@@ -984,6 +986,8 @@ class SequenceGeneratorLogic(GenericLogic, SamplingFunctions, SamplesWriteMethod
             for ensemble_obj, seq_param in sequence_obj.ensemble_param_list:
                 temp_dict = dict()
                 name_list = []
+                if len(ana_chnl_num) == 0:
+                    name_list.append(ensemble_obj.name + '.' + self.waveform_format)
                 for ch_num in ana_chnl_num:
                     name_list.append(ensemble_obj.name + '_ch' + str(ch_num) + '.' + self.waveform_format)
                 temp_dict['name'] = name_list
