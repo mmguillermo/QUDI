@@ -58,6 +58,7 @@ class DTG5334(Base, PulserInterface):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
+        self.current_loaded_asset = ''
         config = self.getConfiguration()
 
         if 'pulsed_file_dir' in config.keys():
@@ -283,11 +284,7 @@ class DTG5334(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        #asset_dir = self.get_asset_dir_on_device()
-        #self.dtg.write('MMEM:LOAD \"{0}\"'.format(os.path.join(asset_dir, asset_name)))
-        ## Wait for everything to complete
-        #while int(self.awg.query('*OPC?')) != 1:
-        #    time.sleep(0.2)
+        self.current_loaded_asset = asset_name
         return 0
 
     def get_loaded_asset(self):
@@ -295,7 +292,7 @@ class DTG5334(Base, PulserInterface):
 
         @return str: Name of the current asset ready to play. (no filename)
         """
-        return ''
+        return self.current_loaded_asset
 
     def clear_all(self):
         """ Clears all loaded waveforms from the pulse generators RAM/workspace.
@@ -304,6 +301,7 @@ class DTG5334(Base, PulserInterface):
         """
         self.dtg.write('GROUP:DEL:ALL;*WAI')
         self.dtg.write('BLOC:DEL:ALL;*WAI')
+        self.current_loaded_asset = ''
         return 0
 
     def get_status(self):
@@ -641,6 +639,7 @@ class DTG5334(Base, PulserInterface):
         self._block_new(ensemble_name, digital_samples.shape[1])
         print(self.dtg.query('BLOC:SEL?'))
         self._block_write(ensemble_name, digital_samples)
+        self.current_loaded_asset = ensemble_name
 
     def _block_length(self, name):
         return int(self.dtg.query('BLOC:LENG? "{0}"'.format(name)))
@@ -708,16 +707,16 @@ class DTG5334(Base, PulserInterface):
             print(line_nr, param)
             self._set_sequence_line(
                 line_nr,
-                '""',
+                '{0}'.format(line_nr + 1),
                 param['trigger_wait'],
-                param['name'],
+                param['name'][0].rsplit('.')[0],
                 param['repetitions'],
                 param['event_jump_to'],
                 param['go_to']
             )
 
         # Wait for everything to complete
-        while int(self.awg.query('*OPC?')) != 1:
+        while int(self.dtg.query('*OPC?')) != 1:
             time.sleep(0.2)
         return 0
 
