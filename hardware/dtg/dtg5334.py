@@ -86,7 +86,7 @@ class DTG5334(Base, PulserInterface):
                            'the connection by using for example "Agilent Connection Expert".'
                            ''.format(self.visa_address))
         else:
-            self.dtg = self._rm.open_resource(self.visa_address)
+            self.dtg = self._rm.open_resource(self.visa_address, read_termination='\n')
             # Set data transfer format (datatype, is_big_endian, container)
             self.dtg.values_format.use_binary('f', False, np.array)
             # set timeout by default to 15 sec
@@ -292,7 +292,7 @@ class DTG5334(Base, PulserInterface):
 
         @return str: Name of the current asset ready to play. (no filename)
         """
-        return self.current_loaded_asset
+        return self.dtg.query('BLOC:SEL?').strip('"')
 
     def clear_all(self):
         """ Clears all loaded waveforms from the pulse generators RAM/workspace.
@@ -448,8 +448,9 @@ class DTG5334(Base, PulserInterface):
         if ch is None:
             chan_list = self.get_constraints().activation_config['all']
 
-        active_ch = {
-            chan: int(self.dtg.query('PGEN{0}:CH{1}:OUTP?'.format(*(self.ch_map[chan])))) == 1 for chan in chan_list}
+        #active_ch = {
+        #    chan: int(self.dtg.query('PGEN{0}:CH{1}:OUTP?'.format(*(self.ch_map[chan])))) == 1 for chan in chan_list}
+        active_ch = {chan: 1 for chan in chan_list}
 
         return active_ch
 
@@ -705,14 +706,16 @@ class DTG5334(Base, PulserInterface):
         self._set_sequence_length(num_steps)
         for line_nr, param in enumerate(sequence_params):
             print(line_nr, param)
+            go_to = '' if param['go_to'] == 0 else param['go_to']
+            jump_to = '' if param['event_jump_to'] == 0 else param['event_jump_to']
             self._set_sequence_line(
                 line_nr,
                 '{0}'.format(line_nr + 1),
                 param['trigger_wait'],
                 param['name'][0].rsplit('.')[0],
                 param['repetitions'],
-                param['event_jump_to'],
-                param['go_to']
+                jump_to,
+                go_to
             )
 
         # Wait for everything to complete
