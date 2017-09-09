@@ -30,7 +30,13 @@ from core.module import Base, ConfigOption
 from interface.pulser_interface import PulserInterface, PulserConstraints
 
 class AWGM8195A(Base, PulserInterface):
-    """ The hardware class to control Keysight AWG M8195. """
+    """ The hardware class to control Keysight AWG M8195.
+
+    The referred manual used for this implementation:
+        Keysight M8195A Arbitrary Waveform Generator Revision 2
+    available here:
+        http://literature.cdn.keysight.com/litweb/pdf/M8195-91040.pdf
+    """
 
     _modclass = 'awgm8195a'
     _modtype = 'hardware'
@@ -68,7 +74,29 @@ class AWGM8195A(Base, PulserInterface):
 
         self.connected = False
 
+        # Sec. 6.2 in manual:
+        # The recommended way to program the M8195A module is to use the IVI
+        # drivers. See documentation of the IVI drivers how to program using
+        # IVI drivers. The connection between the IVI-COM driver and the Soft
+        # Front Panel is hidden. To address a module therefore the PXI or USB
+        # resource string of the module is used. The IVI driver will connect to
+        # an already running Soft Front Panel. If the Soft Front Panel is not
+        # running, it will automatically start it.
+
         # Communicate via SCPI commands through the visa interface:
+        # Sec. 6.3.1 in the manual:
+        # Before sending SCPI commands to the instrument, the Soft Front Panel
+        # (AgM8195SFP.exe) must be started. This can be done in the Windows
+        # Start menu (Start > All Programs > Keysight M8195 >
+        #             Keysight M8195 Soft Front Panel).
+        #
+        # Sec. 6.3.1.2 in the manual:
+        #   - Socket port: 5025 (e.g. TCPIP0::localhost::5025::SOCKET)
+        #   - Telnet port: 5024
+        #   - HiSLIP: 0 (e.g. TCPIP0::localhost::hislip0::INSTR)
+        #   -  VXI-11.3: 0 (e.g. TCPIP0::localhost::inst0::INSTR)
+
+
 
         self._rm = visa.ResourceManager()
         if self.visa_address not in self._rm.list_resources():
@@ -203,7 +231,8 @@ class AWGM8195A(Base, PulserInterface):
         constraints.activation_config = activation_config
 
         # FIXME: additional constraint really necessary?
-        constraints.dac_resolution = {'min': 8, 'max': 8, 'step': 1, 'unit': 'bit'}
+        constraints.dac_resolution = {'min': 8, 'max': 8, 'step': 1,
+                                      'unit': 'bit'}
         return constraints
 
     def pulser_on(self):
@@ -216,7 +245,20 @@ class AWGM8195A(Base, PulserInterface):
         # Check if AWG is in function generator mode
         # self._activate_awg_mode()
 
-        self._write('AWGC:RUN')
+
+        self._write(':OUTP1 ON')
+        self._write(':OUTP2 ON')
+        self._write(':OUTP3 ON')
+        self._write(':OUTP4 ON')
+
+        # Sec. 6.4 from manual:
+        # In the program it is recommended to send the command for starting
+        # data generation (:INIT:IMM) as the last command. This way
+        # intermediate stop/restarts (e.g. when changing sample rate or
+        # loading a waveform) are avoided and optimum execution performance is
+        # achieved.
+
+        self._write(':INIT:IMM')
 
         # wait until the AWG is actually running
         while not self._is_output_on():
@@ -234,7 +276,11 @@ class AWGM8195A(Base, PulserInterface):
                                  class variable status_dic.)
         """
 
-        self._write('AWGC:STOP')
+        self._write(':OUTP1 OFF')
+        self._write(':OUTP2 OFF')
+        self._write(':OUTP3 OFF')
+        self._write(':OUTP4 OFF')
+
         # wait until the AWG has actually stopped
         while self._is_output_on():
             time.sleep(0.25)
@@ -279,7 +325,10 @@ class AWGM8195A(Base, PulserInterface):
 
         @return: bool, (True: output on, False: output off)
         """
-        run_state = bool(int(self._ask('AWGC:RST?')))
+
+        # since output 4 was the last one to be set, assume that all other are
+        # already set
+        run_state = bool(int(self._ask(':OUTP4?')))
         return run_state
 
 """
