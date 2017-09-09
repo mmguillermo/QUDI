@@ -288,7 +288,133 @@ class AWGM8195A(Base, PulserInterface):
         self.is_output_enabled = False
         return self.current_status
 
+    def upload_asset(self, asset_name=None):
+        """ Upload an already hardware conform file to the device.
+            Does NOT load it into channels.
 
+        @param str name: name of the ensemble/sequence to be uploaded
+
+        @return int: error code (0:OK, -1:error)
+
+        If nothing is passed, method will be skipped.
+        """
+        # check input
+        if asset_name is None:
+            self.log.warning('No asset name provided for upload!\nCorrect that!\n'
+                             'Command will be ignored.')
+            return -1
+
+
+
+        # select extended Memory Mode
+        self._write(':TRAC1:MMOD EXT')
+        self._write(':TRAC2:MMOD EXT')
+        self._write(':TRAC3:MMOD EXT')
+        self._write(':TRAC4:MMOD EXT')
+
+
+
+        self._write(':TRAC1:DATA 1,0,{0}'.format(asset_name + '_ch1.bin8'))
+        self._write(':TRAC2:DATA 1,0,{0}'.format(asset_name + '_ch2.bin8'))
+        self._write(':TRAC3:DATA 1,0,{0}'.format(asset_name + '_ch3.bin8'))
+        self._write(':TRAC4:DATA 1,0,{0}'.format(asset_name + '_ch4.bin8'))
+
+
+
+        # self._activate_awg_mode()
+        # at first delete all the name, which might lead to confusions in the upload procedure:
+        self.delete_asset(asset_name)
+        # determine which files to transfer
+        filelist = self._get_filenames_on_host()
+        upload_names = []
+        for filename in filelist:
+            if filename == asset_name + '.seq':
+                upload_names.append(filename)
+                break
+            elif filename == asset_name + '.seqx':
+                upload_names.append(filename)
+                break
+            elif fnmatch(filename, asset_name + '_ch?.wfm*'):
+                upload_names.append(filename)
+            elif fnmatch(filename, asset_name + '.wfm*'):
+                upload_names.append(filename)
+                break
+            elif filename == asset_name + '.mat':
+                upload_names.append(filename)
+                break
+        # Transfer files and load into AWG workspace
+        for filename in upload_names:
+            self._send_file(filename)
+            file_path = os.path.join(self.ftp_root_directory, self.asset_directory, filename)
+            if filename.endswith('.mat'):
+                self.awg.write('MMEM:OPEN:SASS:WAV "{0}"'.format(file_path))
+            else:
+                self.awg.write('MMEM:OPEN "{0}"'.format(file_path))
+            self.awg.query('*OPC?')
+        # Wait for the loading to completed
+        while int(self.awg.query('*OPC?')) != 1:
+            time.sleep(0.2)
+        return 0
+
+
+    def load_asset(self, asset_name, load_dict=None):
+        """ Loads a sequence or waveform to the specified channel of the pulsing
+            device.
+
+        @param str asset_name: The name of the asset to be loaded
+
+        @param dict load_dict:  a dictionary with keys being one of the
+                                available channel numbers and items being the
+                                name of the already sampled
+                                waveform/sequence files.
+                                Examples:   {1: rabi_ch1, 2: rabi_ch2}
+                                            {1: rabi_ch2, 2: rabi_ch1}
+                                This parameter is optional. If none is given
+                                then the channel association is invoked from
+                                the sequence generation,
+                                i.e. the filename appendix (_ch1, _ch2 etc.)
+
+        @return int: error code (0:OK, -1:error)
+
+        Unused for digital pulse generators without sequence storage capability
+        (PulseBlaster, FPGA).
+        """
+
+
+
+        self._write(':TRAC1:IMP 1,0,{0}'.format(asset_name + '_ch1.bin8'))
+        self._write(':TRAC2:IMP 1,0,{0}'.format(asset_name + '_ch2.bin8'))
+        self._write(':TRAC3:IMP 1,0,{0}'.format(asset_name + '_ch3.bin8'))
+        self._write(':TRAC4:IMP 1,0,{0}'.format(asset_name + '_ch4.bin8'))
+
+
+
+        # Get all sequence and waveform names currently loaded into AWG workspace
+        seq_list = self._get_sequence_names_memory()
+        wfm_list = self._get_waveform_names_memory()
+
+        # Check if load_dict is None or an empty dict
+        if not load_dict:
+            # check if the desired asset is in workspace. Load to channels if that is the case.
+            if asset_name in seq_list:
+                trac_num = int(self.awg.query('SLIS:SEQ:TRAC? "{0}"'.format(asset_name)))
+                for chnl in range(1, trac_num + 1):
+                    self.awg.write('SOUR{0}:CASS:SEQ "{1}", {2}'.format(chnl, asset_name, chnl))
+            # check if the desired asset is in workspace. Load to channels if that is the case.
+            elif asset_name + '_ch1' in wfm_list:
+                self.awg.write('SOUR1:CASS:WAV "{0}"'.format(asset_name + '_ch1'))
+                if self._get_max_a_channel_number() > 1 and asset_name + '_ch2' in wfm_list:
+                    self.awg.write('SOUR2:CASS:WAV "{0}"'.format(asset_name + '_ch2'))
+            self.current_loaded_asset = asset_name
+        else:
+            self.log.error('Loading assets into user defined channels is not yet implemented.\n'
+                           'In other words: The "load_dict" parameter of the "load_asset" method '
+                           'is not handled yet.')
+
+        # Wait for the loading to completed
+        while int(self._ask('*OPC?')) != 1:
+            time.sleep(0.2)
+        return 0
 
 
 ################################################################################
