@@ -20,6 +20,10 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+import os
+import visa
+import numpy as np
+
 from core.module import Base, ConfigOption
 from interface.pulser_interface import PulserInterface, PulserConstraints
 
@@ -29,16 +33,75 @@ class AWGM8195A(Base, PulserInterface):
     _modclass = 'awgm8195'
     _modtype = 'hardware'
 
+    # config options
+    visa_address = ConfigOption(name='awg_visa_address', missing='error')
+    awg_timeout = ConfigOption(name='awg_timeout', default=10, missing='warn')
 
-def on_activate(self):
-    """ Initialisation performed during activation of the module. """
+    def on_activate(self):
+        """ Initialisation performed during activation of the module. """
 
-    pass
+        config = self.getConfiguration()
 
-def on_deactivate(self):
-    """ Required tasks to be performed during deactivation of the module. """
+        if 'pulsed_file_dir' in config.keys():
+            self.pulsed_file_dir = config['pulsed_file_dir']
+            if not os.path.exists(self.pulsed_file_dir):
+                homedir = self.get_home_dir()
+                self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
+                self.log.warning('The directory defined in parameter '
+                                 '"pulsed_file_dir" in the config for '
+                                 'AWGM8195A class does not exist!\n'
+                                 'The default home directory\n{0}\n will '
+                                 'be taken instead.'
+                                 ''.format(self.pulsed_file_dir))
+        else:
+            homedir = self.get_home_dir()
+            self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
+            self.log.warning('No parameter "pulsed_file_dir" was specified '
+                             'in the config for AWGM8195A class as '
+                             'directory for the pulsed files!\nThe '
+                             'default home directory\n{0}\nwill be taken '
+                             'instead.'.format(self.pulsed_file_dir))
 
-    pass
+        self.host_waveform_directory = self._get_dir_for_name('sampled_hardware_files')
+
+        self.connected = False
+
+        self._rm = visa.ResourceManager()
+        if self.visa_address not in self._rm.list_resources():
+            self.log.error('VISA address "{0}" not found by the pyVISA '
+                           'resource manager.\nCheck the connection by using '
+                           'for example "Agilent Connection Expert".'
+                           ''.format(self.visa_address))
+        else:
+            self.awg = self._rm.open_resource(self.visa_address)
+            # Set data transfer format (datatype, is_big_endian, container)
+            self.awg.values_format.use_binary('f', False, np.array)
+
+            self.awg.timeout = self.awg_timeout*1000 # should be in ms
+
+            self.connected = True
+
+        self.sample_rate = self.get_sample_rate()
+        self.amplitude_list, self.offset_list = self.get_analog_level()
+        self.markers_low, self.markers_high = self.get_digital_level()
+        self.is_output_enabled = self._is_output_on()
+        self.use_sequencer = self.has_sequence_mode()
+        self.active_channel = self.get_active_channels()
+        self.interleave = self.get_interleave()
+        self.current_loaded_asset = ''
+        self._init_loaded_asset()
+        self.current_status = 0
+
+
+    def on_deactivate(self):
+        """ Required tasks to be performed during deactivation of the module. """
+
+        try:
+            self.awg.close()
+        except:
+            self.log.warning('Closing AWG connection using pyvisa failed.')
+        self.log.info('Closed connection to AWG')
+        self.connected = False
 
 
 
