@@ -22,6 +22,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 import os
 import visa
+import time
 import numpy as np
 from collections import OrderedDict
 
@@ -31,7 +32,7 @@ from interface.pulser_interface import PulserInterface, PulserConstraints
 class AWGM8195A(Base, PulserInterface):
     """ The hardware class to control Keysight AWG M8195. """
 
-    _modclass = 'awgm8195'
+    _modclass = 'awgm8195a'
     _modtype = 'hardware'
 
     # config options
@@ -76,11 +77,11 @@ class AWGM8195A(Base, PulserInterface):
                            'for example "Agilent Connection Expert".'
                            ''.format(self.visa_address))
         else:
-            self.awg = self._rm.open_resource(self.visa_address)
+            self._awg = self._rm.open_resource(self.visa_address)
             # Set data transfer format (datatype, is_big_endian, container)
-            self.awg.values_format.use_binary('f', False, np.array)
+            self._awg.values_format.use_binary('f', False, np.array)
 
-            self.awg.timeout = self.awg_timeout*1000 # should be in ms
+            self._awg.timeout = self.awg_timeout*1000 # should be in ms
 
             self.connected = True
 
@@ -100,7 +101,7 @@ class AWGM8195A(Base, PulserInterface):
         """ Required tasks to be performed during deactivation of the module. """
 
         try:
-            self.awg.close()
+            self._awg.close()
         except:
             self.log.warning('Closing AWG connection using pyvisa failed.')
         self.log.info('Closed connection to AWG')
@@ -205,7 +206,81 @@ class AWGM8195A(Base, PulserInterface):
         constraints.dac_resolution = {'min': 8, 'max': 8, 'step': 1, 'unit': 'bit'}
         return constraints
 
+    def pulser_on(self):
+        """ Switches the pulsing device on.
 
+        @return int: error code (0:OK, -1:error, higher number corresponds to
+                                 current status of the device. Check then the
+                                 class variable status_dic.)
+        """
+        # Check if AWG is in function generator mode
+        # self._activate_awg_mode()
+
+        self._write('AWGC:RUN')
+
+        # wait until the AWG is actually running
+        while not self._is_output_on():
+            time.sleep(0.25)
+
+        self.current_status = 1
+        self.is_output_enabled = True
+        return self.current_status
+
+    def pulser_off(self):
+        """ Switches the pulsing device off.
+
+        @return int: error code (0:OK, -1:error, higher number corresponds to
+                                 current status of the device. Check then the
+                                 class variable status_dic.)
+        """
+
+        self._write('AWGC:STOP')
+        # wait until the AWG has actually stopped
+        while self._is_output_on():
+            time.sleep(0.25)
+        self.current_status = 0
+        self.is_output_enabled = False
+        return self.current_status
+
+
+
+
+################################################################################
+###                         Non interface methods                            ###
+################################################################################
+
+    def _ask(self, question):
+        """ Ask wrapper.
+
+        @param str question: a question to the device
+
+        @return: the received answer
+        """
+        return self._awg.query(question)
+
+    def _write(self, cmd, wait=True):
+        """ Write wrapper.
+
+        @param str cmd: a command to the device
+        @param bool wait: optional, is the wait statement should be skipped.
+
+        @return: str: the statuscode of the write command.
+        """
+
+        statuscode = self._awg.write(cmd)
+        if wait:
+            self._awg.write('*WAI')
+        return statuscode
+
+
+    def _is_output_on(self):
+        """
+        Aks the AWG if the output is enabled, i.e. if the AWG is running
+
+        @return: bool, (True: output on, False: output off)
+        """
+        run_state = bool(int(self._ask('AWGC:RST?')))
+        return run_state
 
 """
 Discussion about sampling the waveform for the AWG. This text will move 
