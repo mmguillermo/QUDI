@@ -23,6 +23,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 import os
 import visa
 import numpy as np
+from collections import OrderedDict
 
 from core.module import Base, ConfigOption
 from interface.pulser_interface import PulserInterface, PulserConstraints
@@ -66,6 +67,8 @@ class AWGM8195A(Base, PulserInterface):
 
         self.connected = False
 
+        # Communicate via SCPI commands through the visa interface:
+
         self._rm = visa.ResourceManager()
         if self.visa_address not in self._rm.list_resources():
             self.log.error('VISA address "{0}" not found by the pyVISA '
@@ -104,6 +107,103 @@ class AWGM8195A(Base, PulserInterface):
         self.connected = False
 
 
+    def get_constraints(self):
+        """
+        Retrieve the hardware constrains from the Pulsing device.
+
+        @return constraints object: object with pulser constraints as attributes.
+
+        Provides all the constraints (e.g. sample_rate, amplitude,
+        total_length_bins, channel_config, ...) related to the pulse generator
+        hardware to the caller.
+
+            SEE PulserConstraints CLASS IN pulser_interface.py
+            FOR AVAILABLE CONSTRAINTS!!!
+
+        If you are not sure about the meaning, look in other hardware files to
+        get an impression. If still additional constraints are needed, then
+        they have to be added to the PulserConstraints class.
+
+        Each scalar parameter is an ScalarConstraints object defined in
+        cor.util.interfaces. Essentially it contains min/max values as well as
+        min step size, default value and unit of the parameter.
+
+        PulserConstraints.activation_config differs, since it contain the
+        channel configuration/activation information of the form:
+            {<descriptor_str>: <channel_list>,
+             <descriptor_str>: <channel_list>,
+             ...}
+
+        If the constraints cannot be set in the pulsing hardware (e.g. because
+        it might have no sequence mode) just leave it out so that the default
+        is used (only zeros).
+        """
+        constraints = PulserConstraints()
+
+        # The compatible file formats are hardware specific.
+        constraints.waveform_format = ['bin8']
+
+        if self._AWG_MODEL == 'M8195A':
+            constraints.sample_rate.min = 53.76e9
+            constraints.sample_rate.max = 65.0e9
+            constraints.sample_rate.step = 1.0e7
+            constraints.sample_rate.default = 65.00e9
+        else:
+            self.log.error('The current AWG model has no valid sample rate '
+                           'constraints')
+
+        constraints.a_ch_amplitude.min = 0.0375
+        constraints.a_ch_amplitude.max = 0.5    # corresponds to 1Vpp
+        constraints.a_ch_amplitude.step = 0.002 # actually 1Vpp/2^8=0.0019..
+        constraints.a_ch_amplitude.default = 0.5
+
+        # for now, no digital/marker channel.
+        #FIXME: implement marker channel configuration.
+
+        constraints.sampled_file_length.min = 128
+        constraints.sampled_file_length.max = 2_000_000_000
+        constraints.sampled_file_length.step = 128
+        constraints.sampled_file_length.default = 128
+
+        constraints.waveform_num.min = 1
+        constraints.waveform_num.max = 16_000_000
+        constraints.waveform_num.default = 1
+        # The sample memory can be split into a maximum of 16 M waveform segments
+
+        # FIXME: Check the proper number for your device
+        constraints.sequence_num.min = 1
+        constraints.sequence_num.max = 4000
+        constraints.sequence_num.step = 1
+        constraints.sequence_num.default = 1
+
+        # If sequencer mode is available then these should be specified
+        constraints.repetitions.min = 0
+        constraints.repetitions.max = 65536
+        constraints.repetitions.step = 1
+        constraints.repetitions.default = 0
+
+        # ToDo: Check how many external triggers are available
+        constraints.trigger_in.min = 0
+        constraints.trigger_in.max = 1
+        constraints.trigger_in.step = 1
+        constraints.trigger_in.default = 0
+
+        # the name a_ch<num> and d_ch<num> are generic names, which describe
+        # UNAMBIGUOUSLY the channels. Here all possible channel configurations
+        # are stated, where only the generic names should be used. The names
+        # for the different configurations can be customary chosen.
+        activation_config = OrderedDict()
+        if self._AWG_MODEL == 'M8195A':
+            activation_config['all'] = ['a_ch1', 'a_ch2', 'a_ch3', 'a_ch4']
+            #FIXME: this awg model supports more channel configuration!
+            #       Implement those! But keep in mind that the format of the
+            #       file might change for difference configurations.
+
+        constraints.activation_config = activation_config
+
+        # FIXME: additional constraint really necessary?
+        constraints.dac_resolution = {'min': 8, 'max': 8, 'step': 1, 'unit': 'bit'}
+        return constraints
 
 
 
