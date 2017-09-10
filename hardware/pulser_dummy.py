@@ -75,14 +75,14 @@ class PulserDummy(Base, PulserInterface):
         self.sample_rate = 25e9
 
         # Deactivate all channels at first:
-        ch = {'a_ch1': False, 'a_ch2': False, 'a_ch3': False,
+        ch = {'a_ch1': False, 'a_ch2': False, 'a_ch3': False, 'a_ch4': False,
               'd_ch1': False, 'd_ch2': False, 'd_ch3': False, 'd_ch4': False,
               'd_ch5': False, 'd_ch6': False, 'd_ch7': False, 'd_ch8': False}
         self.active_channel = ch
 
         # for each analog channel one value
-        self.amplitude_list = {'a_ch1': 1, 'a_ch2': 1, 'a_ch3': 1}
-        self.offset_list = {'a_ch1': 0, 'a_ch2': 0, 'a_ch3': 0}
+        self.amplitude_list = {'a_ch1': 1, 'a_ch2': 1, 'a_ch3': 1, 'a_ch4': 1}
+        self.offset_list = {'a_ch1': 0, 'a_ch2': 0, 'a_ch3': 0, 'a_ch4': 0}
 
         # for each digital channel one value
         self.digital_high_list = {'d_ch1': 5, 'd_ch2': 5, 'd_ch3': 5, 'd_ch4': 5,
@@ -240,7 +240,10 @@ class PulserDummy(Base, PulserInterface):
         activation_config['config8'] = ['a_ch3']
         # Usage of only the analog channels:
         activation_config['config9'] = ['a_ch2', 'a_ch3']
+        activation_config['config10'] = ['a_ch1', 'a_ch2', 'a_ch3', 'a_ch4']
         constraints.activation_config = activation_config
+
+
 
         return constraints
 
