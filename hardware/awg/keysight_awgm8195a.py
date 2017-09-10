@@ -44,32 +44,39 @@ class AWGM8195A(Base, PulserInterface):
     # config options
     visa_address = ConfigOption(name='awg_visa_address', missing='error')
     awg_timeout = ConfigOption(name='awg_timeout', default=10, missing='warn')
+    # root directory on the other pc
+    ftp_root_dir = ConfigOption('ftp_root_dir', default='C:\\inetpub\\ftproot',
+                                missing='warn')
+
 
     def on_activate(self):
         """ Initialisation performed during activation of the module. """
 
         config = self.getConfiguration()
 
+        # the path to 'pulsed_file_dir' is the root directory for all the
+        # pulsed files. I.e. in sub-directories you can find the pulsed block,
+        # pulse block ensembles and sequence files (generic building blocks)
+        # and in sampled_hardware_files the real files are situated.
+
+        use_default_dir = True
+
         if 'pulsed_file_dir' in config.keys():
-            self.pulsed_file_dir = config['pulsed_file_dir']
-            if not os.path.exists(self.pulsed_file_dir):
-                homedir = self.get_home_dir()
-                self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-                self.log.warning('The directory defined in parameter '
-                                 '"pulsed_file_dir" in the config for '
-                                 'AWGM8195A class does not exist!\n'
-                                 'The default home directory\n{0}\n will '
-                                 'be taken instead.'
-                                 ''.format(self.pulsed_file_dir))
-        else:
+            if os.path.exists(config['pulsed_file_dir']):
+                use_default_dir = False
+                self.pulsed_file_dir = config['pulsed_file_dir']
+
+        if use_default_dir:
             homedir = self.get_home_dir()
             self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-            self.log.warning('No parameter "pulsed_file_dir" was specified '
-                             'in the config for AWGM8195A class as '
-                             'directory for the pulsed files!\nThe '
-                             'default home directory\n{0}\nwill be taken '
-                             'instead.'.format(self.pulsed_file_dir))
+            self.log.warning('Either no config parameter "pulsed_file_dir" was '
+                             'specified in the config for AWGM8195A class as '
+                             'directory for the pulsed files or the directory '
+                             'does not exist.\nThe default home directory\n'
+                             '{0}\nfor pulsed files will be taken instead.'
+                             ''.format(self.pulsed_file_dir))
 
+        # here the samples files are stored on host PC:
         self.host_waveform_directory = self._get_dir_for_name('sampled_hardware_files')
 
         self.connected = False
@@ -112,6 +119,7 @@ class AWGM8195A(Base, PulserInterface):
             self._awg.timeout = self.awg_timeout*1000 # should be in ms
 
             self.connected = True
+
 
         self.sample_rate = self.get_sample_rate()
         self.amplitude_list, self.offset_list = self.get_analog_level()
@@ -189,10 +197,10 @@ class AWGM8195A(Base, PulserInterface):
         # for now, no digital/marker channel.
         #FIXME: implement marker channel configuration.
 
-        constraints.sampled_file_length.min = 128
+        constraints.sampled_file_length.min = 256
         constraints.sampled_file_length.max = 2_000_000_000
-        constraints.sampled_file_length.step = 128
-        constraints.sampled_file_length.default = 128
+        constraints.sampled_file_length.step = 256
+        constraints.sampled_file_length.default = 256
 
         constraints.waveform_num.min = 1
         constraints.waveform_num.max = 16_000_000
@@ -292,7 +300,7 @@ class AWGM8195A(Base, PulserInterface):
         """ Upload an already hardware conform file to the device.
             Does NOT load it into channels.
 
-        @param str name: name of the ensemble/sequence to be uploaded
+        @param str asset_name: name of the ensemble/sequence to be uploaded
 
         @return int: error code (0:OK, -1:error)
 
@@ -304,58 +312,9 @@ class AWGM8195A(Base, PulserInterface):
                              'Command will be ignored.')
             return -1
 
-
-
-        # select extended Memory Mode
-        self._write(':TRAC1:MMOD EXT')
-        self._write(':TRAC2:MMOD EXT')
-        self._write(':TRAC3:MMOD EXT')
-        self._write(':TRAC4:MMOD EXT')
-
-
-
-        self._write(':TRAC1:DATA 1,0,{0}'.format(asset_name + '_ch1.bin8'))
-        self._write(':TRAC2:DATA 1,0,{0}'.format(asset_name + '_ch2.bin8'))
-        self._write(':TRAC3:DATA 1,0,{0}'.format(asset_name + '_ch3.bin8'))
-        self._write(':TRAC4:DATA 1,0,{0}'.format(asset_name + '_ch4.bin8'))
-
-
-
-        # self._activate_awg_mode()
-        # at first delete all the name, which might lead to confusions in the upload procedure:
-        self.delete_asset(asset_name)
-        # determine which files to transfer
-        filelist = self._get_filenames_on_host()
-        upload_names = []
-        for filename in filelist:
-            if filename == asset_name + '.seq':
-                upload_names.append(filename)
-                break
-            elif filename == asset_name + '.seqx':
-                upload_names.append(filename)
-                break
-            elif fnmatch(filename, asset_name + '_ch?.wfm*'):
-                upload_names.append(filename)
-            elif fnmatch(filename, asset_name + '.wfm*'):
-                upload_names.append(filename)
-                break
-            elif filename == asset_name + '.mat':
-                upload_names.append(filename)
-                break
-        # Transfer files and load into AWG workspace
-        for filename in upload_names:
-            self._send_file(filename)
-            file_path = os.path.join(self.ftp_root_directory, self.asset_directory, filename)
-            if filename.endswith('.mat'):
-                self.awg.write('MMEM:OPEN:SASS:WAV "{0}"'.format(file_path))
-            else:
-                self.awg.write('MMEM:OPEN "{0}"'.format(file_path))
-            self.awg.query('*OPC?')
-        # Wait for the loading to completed
-        while int(self.awg.query('*OPC?')) != 1:
-            time.sleep(0.2)
+        self.log.info('Upload to AWG M8195A will be skipped, since connected '
+                      'directly and not via an ftp pc.')
         return 0
-
 
     def load_asset(self, asset_name, load_dict=None):
         """ Loads a sequence or waveform to the specified channel of the pulsing
@@ -380,43 +339,166 @@ class AWGM8195A(Base, PulserInterface):
         (PulseBlaster, FPGA).
         """
 
+        if load_dict is None:
+            load_dict = {}
+
+        wfm_list = self._get_waveform_names_memory()
+
+        # select extended Memory Mode
+        self._write(':TRAC1:MMOD EXT')
+        self._write(':TRAC2:MMOD EXT')
+        self._write(':TRAC3:MMOD EXT')
+        self._write(':TRAC4:MMOD EXT')
 
 
+        segment = 1 # always write in segment 1
         self._write(':TRAC1:IMP 1,0,{0}'.format(asset_name + '_ch1.bin8'))
         self._write(':TRAC2:IMP 1,0,{0}'.format(asset_name + '_ch2.bin8'))
         self._write(':TRAC3:IMP 1,0,{0}'.format(asset_name + '_ch3.bin8'))
         self._write(':TRAC4:IMP 1,0,{0}'.format(asset_name + '_ch4.bin8'))
 
 
+        # set the waveform directory:
+        self._write(':MMEM:CDIR {0}'.format(r"C:\Users\Name\Documents"))
 
-        # Get all sequence and waveform names currently loaded into AWG workspace
-        seq_list = self._get_sequence_names_memory()
-        wfm_list = self._get_waveform_names_memory()
+        # Get the waveform directory:
+        dir = self._ask(':MMEM:CDIR?')
 
-        # Check if load_dict is None or an empty dict
-        if not load_dict:
-            # check if the desired asset is in workspace. Load to channels if that is the case.
-            if asset_name in seq_list:
-                trac_num = int(self.awg.query('SLIS:SEQ:TRAC? "{0}"'.format(asset_name)))
-                for chnl in range(1, trac_num + 1):
-                    self.awg.write('SOUR{0}:CASS:SEQ "{1}", {2}'.format(chnl, asset_name, chnl))
-            # check if the desired asset is in workspace. Load to channels if that is the case.
-            elif asset_name + '_ch1' in wfm_list:
-                self.awg.write('SOUR1:CASS:WAV "{0}"'.format(asset_name + '_ch1'))
-                if self._get_max_a_channel_number() > 1 and asset_name + '_ch2' in wfm_list:
-                    self.awg.write('SOUR2:CASS:WAV "{0}"'.format(asset_name + '_ch2'))
+
+
+
+
+
+
+
+        path = self.ftp_root_directory
+
+        # Find all files associated with the specified asset name
+        file_list = self._get_filenames_on_device()
+        filename = []
+
+        # Be careful which asset_name to specify as the current_loaded_asset
+        # because a loaded sequence contains also individual waveforms, which
+        # should not be used as the current asset!!
+
+        segment = 1
+        offset = 0
+        for file in file_list:
+            if file == asset_name+'_ch1.bin8':
+                filepath = os.path.join(path, asset_name + '_ch1.bin8')
+                self._write(':TRAC1:IMP {0},{1},{2}'.format(segment, offset,
+                                                            filepath))
+                # if the asset is not a sequence file, then it must be a wfm
+                # file and either both or one of the channels should contain
+                # the asset name:
+                self.current_loaded_asset = asset_name
+                filename.append(file)
+
+            elif file == asset_name+'_ch2.bin8':
+                filepath = os.path.join(path, asset_name + '_ch2.bin8')
+                self._write(':TRAC2:IMP {0},{1},{2}'.format(segment, offset,
+                                                            filepath))
+                # if the asset is not a sequence file, then it must be a wfm
+                # file and either both or one of the channels should contain
+                # the asset name:
+                self.current_loaded_asset = asset_name
+                filename.append(file)
+
+            elif file == asset_name+'_ch3.bin8':
+                filepath = os.path.join(path, asset_name + '_ch3.bin8')
+                self._write(':TRAC3:IMP {0},{1},{2}'.format(segment, offset,
+                                                            filepath))
+                # if the asset is not a sequence file, then it must be a wfm
+                # file and either both or one of the channels should contain
+                # the asset name:
+                self.current_loaded_asset = asset_name
+                filename.append(file)
+
+            elif file == asset_name+'_ch4.bin8':
+                filepath = os.path.join(path, asset_name + '_ch4.bin8')
+                self._write(':TRAC4:IMP {0},{1},{2}'.format(segment, offset,
+                                                            filepath))
+                # if the asset is not a sequence file, then it must be a wfm
+                # file and either both or one of the channels should contain
+                # the asset name:
+                self.current_loaded_asset = asset_name
+                filename.append(file)
+
+        if load_dict == {} and filename == []:
+            self.log.warning('No file and channel provided for load!\n'
+                    'Correct that!\nCommand will be ignored.')
+
+        for channel_num in list(load_dict):
+            file_name = str(load_dict[channel_num]) + '_ch{0}.bin8'.format(int(channel_num))
+            filepath = os.path.join(path, file_name)
+
+            self._write(':TRAC{0}:IMP {1},{2},{3}'.format(channel_num,
+                                                          segment,
+                                                          offset,
+                                                          filepath))
+
+        if len(load_dict) > 0:
             self.current_loaded_asset = asset_name
-        else:
-            self.log.error('Loading assets into user defined channels is not yet implemented.\n'
-                           'In other words: The "load_dict" parameter of the "load_asset" method '
-                           'is not handled yet.')
 
-        # Wait for the loading to completed
-        while int(self._ask('*OPC?')) != 1:
-            time.sleep(0.2)
         return 0
 
+    def get_loaded_asset(self):
+        """ Retrieve the currently loaded asset name of the device.
 
+        @return str: Name of the current asset, that can be either a filename
+                     a waveform, a sequence ect.
+        """
+        return self.current_loaded_asset
+
+    def clear_all(self):
+        """ Clears the loaded waveform from the pulse generators RAM.
+
+        @return int: error code (0:OK, -1:error)
+
+        Delete all waveforms and sequences from Hardware memory and clear the
+        visual display. Unused for digital pulse generators without sequence
+        storage capability (PulseBlaster, FPGA).
+        """
+        segment = 1
+        self._write(':TRAC1:DEL {0}'.format(segment))
+        self._write(':TRAC2:DEL {0}'.format(segment))
+        self._write(':TRAC3:DEL {0}'.format(segment))
+        self._write(':TRAC4:DEL {0}'.format(segment))
+        self.current_loaded_asset = ''
+        return
+
+    def direct_upload(self, channel, asset_name_p):
+        """ Direct upload from RAM to the device.
+
+        @param int channel: channel number in the range [1,2,3,4].
+        @param object asset_name_p: a reference to the file object pointer in
+                                    the RAM containing the binary written data.
+                                    E.g. if file object was open with
+                                    f=open(xxx) f would be the asset_name_p.
+
+        @return int: error code (0:OK, -1:error)
+        """
+
+
+        #FIXME: that is not fixed yet
+
+
+        # select extended Memory Mode
+        self._write(':TRAC1:MMOD EXT')
+        self._write(':TRAC2:MMOD EXT')
+        self._write(':TRAC3:MMOD EXT')
+        self._write(':TRAC4:MMOD EXT')
+
+        segment = 1     # always write in segment 1
+        length = len(asset_name_p)
+        self._write(':TRAC{0}:DEF {1},{2},0'.format(channel, segment, length))
+
+
+        self._write(':TRAC{0}:DATA {1},0,{2}'.format(channel, segment,
+                                                     asset_name_p),
+                    write_val=True)
+
+        return 0
 ################################################################################
 ###                         Non interface methods                            ###
 ################################################################################
@@ -430,7 +512,7 @@ class AWGM8195A(Base, PulserInterface):
         """
         return self._awg.query(question)
 
-    def _write(self, cmd, wait=True):
+    def _write(self, cmd, wait=True, write_val=False):
         """ Write wrapper.
 
         @param str cmd: a command to the device
@@ -438,8 +520,10 @@ class AWGM8195A(Base, PulserInterface):
 
         @return: str: the statuscode of the write command.
         """
-
-        statuscode = self._awg.write(cmd)
+        if write_val:
+            statuscode = self._awg.write_values(cmd)
+        else:
+            statuscode = self._awg.write(cmd)
         if wait:
             self._awg.write('*WAI')
         return statuscode
@@ -456,6 +540,25 @@ class AWGM8195A(Base, PulserInterface):
         # already set
         run_state = bool(int(self._ask(':OUTP4?')))
         return run_state
+
+
+    def _get_filenames_on_host(self):
+        """ Get the full filenames of all assets saved on the host PC.
+
+        @return: list, The full filenames of all assets saved on the host PC.
+        """
+        filename_list = [f for f in os.listdir(self.host_waveform_directory) if f.endswith('.bin8')]
+        return filename_list
+
+    def _get_filenames_on_device(self):
+        """ Get the full filenames of all assets saved on the device.
+
+        @return: list, The full filenames of all assets saved on the device.
+        """
+
+        # assume AWG is directly connected via USB so files on host = files on
+        # device
+        return self._get_filenames_on_host()
 
 """
 Discussion about sampling the waveform for the AWG. This text will move 
