@@ -342,34 +342,17 @@ class AWGM8195A(Base, PulserInterface):
         if load_dict is None:
             load_dict = {}
 
-        wfm_list = self._get_waveform_names_memory()
-
         # select extended Memory Mode
         self._write(':TRAC1:MMOD EXT')
         self._write(':TRAC2:MMOD EXT')
         self._write(':TRAC3:MMOD EXT')
         self._write(':TRAC4:MMOD EXT')
 
-
-        segment = 1 # always write in segment 1
-        self._write(':TRAC1:IMP 1,0,{0}'.format(asset_name + '_ch1.bin8'))
-        self._write(':TRAC2:IMP 1,0,{0}'.format(asset_name + '_ch2.bin8'))
-        self._write(':TRAC3:IMP 1,0,{0}'.format(asset_name + '_ch3.bin8'))
-        self._write(':TRAC4:IMP 1,0,{0}'.format(asset_name + '_ch4.bin8'))
-
-
-        # set the waveform directory:
-        self._write(':MMEM:CDIR {0}'.format(r"C:\Users\Name\Documents"))
-
-        # Get the waveform directory:
-        dir = self._ask(':MMEM:CDIR?')
-
-
-
-
-
-
-
+        # # set the waveform directory:
+        # self._write(':MMEM:CDIR {0}'.format(r"C:\Users\Name\Documents"))
+        #
+        # # Get the waveform directory:
+        # dir = self._ask(':MMEM:CDIR?')
 
         path = self.ftp_root_directory
 
@@ -467,38 +450,84 @@ class AWGM8195A(Base, PulserInterface):
         self.current_loaded_asset = ''
         return
 
-    def direct_upload(self, channel, asset_name_p):
-        """ Direct upload from RAM to the device.
+    def get_status(self):
+        """ Retrieves the status of the pulsing hardware
 
-        @param int channel: channel number in the range [1,2,3,4].
-        @param object asset_name_p: a reference to the file object pointer in
-                                    the RAM containing the binary written data.
-                                    E.g. if file object was open with
-                                    f=open(xxx) f would be the asset_name_p.
+        @return (int, dict): inter value of the current status with the
+                             corresponding dictionary containing status
+                             description for all the possible status variables
+                             of the pulse generator hardware.
+                0 indicates that the instrument has stopped.
+                1 indicates that the instrument is waiting for trigger.
+                2 indicates that the instrument is running.
+               -1 indicates that the request of the status for AWG has failed.
+        """
+        status_dic = {}
+        status_dic[-1] = 'Failed Request or Communication'
+        status_dic[0] = 'Device has stopped, but can receive commands.'
+        status_dic[1] = 'Device is active and running.'
+        # All the other status messages should have higher integer values
+        # then 1.
 
-        @return int: error code (0:OK, -1:error)
+        # ask 3 times
+        for _ in range(3):
+            try:
+                state = int(self._ask(':OUTP1?'))
+                break
+            except:
+                state = -1
+
+        for _ in range(3):
+            try:
+                state = int(self._ask(':OUTP2?')) | state
+                break
+            except:
+                state = -1
+
+        for _ in range(3):
+            try:
+                state = int(self._ask(':OUTP3?')) | state
+                break
+            except:
+                state = -1
+
+        for _ in range(3):
+            try:
+                state = int(self._ask(':OUTP4?')) | state
+                break
+            except:
+                state = -1
+
+        return state, status_dic
+
+    def get_sample_rate(self):
+        """ Get the sample rate of the pulse generator hardware
+
+        @return float: The current sample rate of the device (in Hz)
+
+        Do not return a saved sample rate in a class variable, but instead
+        retrieve the current sample rate directly from the device.
         """
 
+        self.sample_rate = float(self._ask(':FREQ:RAST?'))
+        return self.sample_rate
 
-        #FIXME: that is not fixed yet
+    def set_sample_rate(self, sample_rate):
+        """ Set the sample rate of the pulse generator hardware.
 
+        @param float sample_rate: The sampling rate to be set (in Hz)
 
-        # select extended Memory Mode
-        self._write(':TRAC1:MMOD EXT')
-        self._write(':TRAC2:MMOD EXT')
-        self._write(':TRAC3:MMOD EXT')
-        self._write(':TRAC4:MMOD EXT')
+        @return float: the sample rate returned from the device.
 
-        segment = 1     # always write in segment 1
-        length = len(asset_name_p)
-        self._write(':TRAC{0}:DEF {1},{2},0'.format(channel, segment, length))
+        Note: After setting the sampling rate of the device, retrieve it again
+              for obtaining the actual set value and use that information for
+              further processing.
+        """
 
+        self._write(':FREQ:RAST {0:.4G}GHz\n'.format(sample_rate/1e9))
+        time.sleep(0.2)
+        return self.get_sample_rate()
 
-        self._write(':TRAC{0}:DATA {1},0,{2}'.format(channel, segment,
-                                                     asset_name_p),
-                    write_val=True)
-
-        return 0
 ################################################################################
 ###                         Non interface methods                            ###
 ################################################################################
@@ -559,6 +588,40 @@ class AWGM8195A(Base, PulserInterface):
         # assume AWG is directly connected via USB so files on host = files on
         # device
         return self._get_filenames_on_host()
+
+
+    def direct_upload(self, channel, asset_name_p):
+        """ Direct upload from RAM to the device.
+
+        @param int channel: channel number in the range [1,2,3,4].
+        @param object asset_name_p: a reference to the file object pointer in
+                                    the RAM containing the binary written data.
+                                    E.g. if file object was open with
+                                    f=open(xxx) f would be the asset_name_p.
+
+        @return int: error code (0:OK, -1:error)
+        """
+
+
+        #FIXME: that is not fixed yet
+
+
+        # select extended Memory Mode
+        self._write(':TRAC1:MMOD EXT')
+        self._write(':TRAC2:MMOD EXT')
+        self._write(':TRAC3:MMOD EXT')
+        self._write(':TRAC4:MMOD EXT')
+
+        segment = 1     # always write in segment 1
+        length = len(asset_name_p)
+        self._write(':TRAC{0}:DEF {1},{2},0'.format(channel, segment, length))
+
+
+        self._write(':TRAC{0}:DATA {1},0,{2}'.format(channel, segment,
+                                                     asset_name_p),
+                    write_val=True)
+
+        return 0
 
 """
 Discussion about sampling the waveform for the AWG. This text will move 
