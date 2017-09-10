@@ -20,6 +20,7 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+import re
 import os
 import visa
 import time
@@ -538,6 +539,305 @@ class AWGM8195A(Base, PulserInterface):
         return self.get_sample_rate()
 
 
+    def get_analog_level(self, amplitude=None, offset=None):
+        """ Retrieve the analog amplitude and offset of the provided channels.
+
+        @param list amplitude: optional, if a specific amplitude value (in Volt
+                               peak to peak, i.e. the full amplitude) of a
+                               channel is desired.
+        @param list offset: optional, if a specific high value (in Volt) of a
+                            channel is desired.
+
+        @return: (dict, dict): tuple of two dicts, with keys being the channel
+                               number and items being the values for those
+                               channels. Amplitude is always denoted in
+                               Volt-peak-to-peak and Offset in (absolute)
+                               Voltage.
+
+        Note: Do not return a saved amplitude and/or offset value but instead
+              retrieve the current amplitude and/or offset directly from the
+              device.
+
+        If no entries provided then the levels of all channels where simply
+        returned. If no analog channels provided, return just an empty dict.
+        Example of a possible input:
+            amplitude = [1,4], offset =[1,3]
+        to obtain the amplitude of channel 1 and 4 and the offset
+            {1: -0.5, 4: 2.0} {}
+        since no high request was performed.
+
+        The major difference to digital signals is that analog signals are
+        always oscillating or changing signals, otherwise you can use just
+        digital output. In contrast to digital output levels, analog output
+        levels are defined by an amplitude (here total signal span, denoted in
+        Voltage peak to peak) and an offset (a value around which the signal
+        oscillates, denoted by an (absolute) voltage).
+
+        In general there is no bijective correspondence between
+        (amplitude, offset) and (value high, value low)!
+        """
+        if amplitude is None:
+            amplitude = []
+        if offset is None:
+            offset = []
+        amp = {}
+        off = {}
+
+        pattern = re.compile('[0-9]+')
+
+        if (amplitude == []) and (offset == []):
+
+            # since the available channels are not going to change for this
+            # device you are asking directly:
+            amp['a_ch1'] = float(self._ask(':VOLT1?'))
+            amp['a_ch2'] = float(self._ask(':VOLT2?'))
+            amp['a_ch3'] = float(self._ask(':VOLT3?'))
+            amp['a_ch4'] = float(self._ask(':VOLT4?'))
+
+            off['a_ch1'] = float(self._ask(':VOLT1:OFFS?'))
+            off['a_ch2'] = float(self._ask(':VOLT2:OFFS?'))
+            off['a_ch3'] = float(self._ask(':VOLT3:OFFS?'))
+            off['a_ch4'] = float(self._ask(':VOLT4:OFFS?'))
+
+
+        else:
+
+            for a_ch in amplitude:
+                ch_num = int(re.search(pattern, a_ch).group(0))
+                amp[a_ch] = float(self._ask(':VOLT{0}?'.format(ch_num)))
+
+            for a_ch in offset:
+                ch_num = int(re.search(pattern, a_ch).group(0))
+                off[a_ch] = float(self.ask(':VOLT{0}:OFFS?'.format(ch_num)))
+
+        return amp, off
+
+
+    def set_analog_level(self, amplitude=None, offset=None):
+        """ Set amplitude and/or offset value of the provided analog channel.
+
+        @param dict amplitude: dictionary, with key being the channel and items
+                               being the amplitude values (in Volt peak to peak,
+                               i.e. the full amplitude) for the desired channel.
+        @param dict offset: dictionary, with key being the channel and items
+                            being the offset values (in absolute volt) for the
+                            desired channel.
+
+        @return (dict, dict): tuple of two dicts with the actual set values for
+                              amplitude and offset.
+
+        If nothing is passed then the command will return two empty dicts.
+
+        Note: After setting the analog and/or offset of the device, retrieve
+              them again for obtaining the actual set value(s) and use that
+              information for further processing.
+
+        The major difference to digital signals is that analog signals are
+        always oscillating or changing signals, otherwise you can use just
+        digital output. In contrast to digital output levels, analog output
+        levels are defined by an amplitude (here total signal span, denoted in
+        Voltage peak to peak) and an offset (a value around which the signal
+        oscillates, denoted by an (absolute) voltage).
+
+        In general there is no bijective correspondence between
+        (amplitude, offset) and (value high, value low)!
+        """
+        if amplitude is None:
+            amplitude = {}
+        if offset is None:
+            offset = {}
+
+        constraints = self.get_constraints()
+
+        pattern = re.compile('[0-9]+')
+
+        for a_ch in amplitude:
+            constr = constraints.a_ch_amplitude
+
+            ch_num = int(re.search(pattern, a_ch).group(0))
+
+            if not(constr.min <= amplitude[a_ch] <= constr.max):
+                self.log.warning('Not possible to set for analog channel {0} '
+                                 'the amplitude value {1}Vpp, since it is not '
+                                 'within the interval [{2},{3}]! Command will '
+                                 'be ignored.'
+                                 ''.format(a_ch, amplitude[a_ch],
+                                           constr.min, constr.max))
+            else:
+                self.tell(':VOLT{0} {1:.4f}'.format(ch_num, amplitude[a_ch]))
+
+        for a_ch in offset:
+            constr = constraints.a_ch_offset
+
+            ch_num = int(re.search(pattern, a_ch).group(0))
+
+            if not(constr.min <= offset[a_ch] <= constr.max):
+                self.log.warning('Not possible to set for analog channel {0} '
+                                 'the offset value {1}V, since it is not '
+                                 'within the interval [{2},{3}]! Command will '
+                                 'be ignored.'
+                                 ''.format(a_ch, offset[a_ch], constr.min,
+                                           constr.max))
+            else:
+                self.tell(':VOLT{0}:OFFS {1:.4f}'.format(ch_num, offset[a_ch]))
+
+        return self.get_analog_level(amplitude=list(amplitude), offset=list(offset))
+
+    def get_digital_level(self, low=None, high=None):
+        """ Retrieve the digital low and high level of the provided channels.
+
+        @param list low: optional, if a specific low value (in Volt) of a
+                         channel is desired.
+        @param list high: optional, if a specific high value (in Volt) of a
+                          channel is desired.
+
+        @return: tuple of two dicts, with keys being the channel number and
+                 items being the values for those channels. Both low and high
+                 value of a channel is denoted in (absolute) Voltage.
+
+        If no entries provided then the levels of all channels where simply
+        returned. If no digital channels provided, return just an empty dict.
+        Example of a possible input:
+            low = [1,4]
+        to obtain the low voltage values of digital channel 1 an 4. A possible
+        answer might be
+            {1: -0.5, 4: 2.0} {}
+        since no high request was performed.
+
+        Note, the major difference to analog signals is that digital signals are
+        either ON or OFF, whereas analog channels have a varying amplitude
+        range. In contrast to analog output levels, digital output levels are
+        defined by a voltage, which corresponds to the ON status and a voltage
+        which corresponds to the OFF status (both denoted in (absolute) voltage)
+
+        In general there is not a bijective correspondence between
+        (amplitude, offset) for analog and (value high, value low) for digital!
+        """
+
+        # no digital channel implemented.
+        #FIXME: if marker are implemented, adapt this output
+        return {}, {}
+
+    def set_digital_level(self, low=None, high=None):
+        """ Set low and/or high value of the provided digital channel.
+
+        @param dict low: dictionary, with key being the channel and items being
+                         the low values (in volt) for the desired channel.
+        @param dict high: dictionary, with key being the channel and items being
+                         the high values (in volt) for the desired channel.
+
+        @return (dict, dict): tuple of two dicts where first dict denotes the
+                              current low value and the second dict the high
+                              value.
+
+        If nothing is passed then the command will return two empty dicts.
+
+        Note: After setting the high and/or low values of the device, retrieve
+              them again for obtaining the actual set value(s) and use that
+              information for further processing.
+
+        The major difference to analog signals is that digital signals are
+        either ON or OFF, whereas analog channels have a varying amplitude
+        range. In contrast to analog output levels, digital output levels are
+        defined by a voltage, which corresponds to the ON status and a voltage
+        which corresponds to the OFF status (both denoted in (absolute) voltage)
+
+        In general there is no bijective correspondence between
+        (amplitude, offset) and (value high, value low)!
+        """
+
+        # no digital channel implemented.
+        #FIXME: if marker are implemented, adapt this output
+        return {}, {}
+
+
+    def get_active_channels(self, ch=None):
+        """ Get the active channels of the pulse generator hardware.
+
+        @param list ch: optional, if specific analog or digital channels are
+                        needed to be asked without obtaining all the channels.
+
+        @return dict:  where keys denoting the channel number and items boolean
+                       expressions whether channel are active or not.
+
+        Example for an possible input (order is not important):
+            ch = ['a_ch2', 'd_ch2', 'a_ch1', 'd_ch5', 'd_ch1']
+        then the output might look like
+            {'a_ch2': True, 'd_ch2': False, 'a_ch1': False, 'd_ch5': True, 'd_ch1': False}
+
+        If no parameters are passed to this method all channels will be asked
+        for their setting.
+        """
+        if ch is None:
+            ch = []
+
+        active_ch = {}
+
+        if ch ==[]:
+
+            # because 0 = False and 1 = True
+            active_ch['a_ch1'] = bool(int(self._ask(':OUTP1?')))
+            active_ch['a_ch2'] = bool(int(self._ask(':OUTP2?')))
+            active_ch['a_ch3'] = bool(int(self._ask(':OUTP3?')))
+            active_ch['a_ch4'] = bool(int(self._ask(':OUTP4?')))
+
+        else:
+
+            for channel in ch:
+                if 'a_ch' in channel:
+                    ana_chan = int(channel[4:])
+                    active_ch[channel] = bool(int(self._ask(':OUTP{0}?'.format(ana_chan))))
+
+                elif 'd_ch'in channel:
+                    self.log.warning('Digital channel "{0}" cannot be '
+                                     'activated! Command ignored.'
+                                     ''.format(channel))
+                    active_ch[channel] = False
+
+        return active_ch
+
+
+    def set_active_channels(self, ch=None):
+        """ Set the active channels for the pulse generator hardware.
+
+        @param dict ch: dictionary with keys being the analog or digital
+                          string generic names for the channels with items being
+                          a boolean value.
+
+        @return dict: with the actual set values for active channels for analog
+                      and digital values.
+
+        If nothing is passed then the command will return an empty dict.
+
+        Note: After setting the active channels of the device, retrieve them
+              again for obtaining the actual set value(s) and use that
+              information for further processing.
+
+        Example for possible input:
+            ch={'a_ch2': True, 'd_ch1': False, 'd_ch3': True, 'd_ch4': True}
+        to activate analog channel 2 digital channel 3 and 4 and to deactivate
+        digital channel 1.
+
+        The hardware itself has to handle, whether separate channel activation
+        is possible.
+
+        """
+        if ch is None:
+            ch = {}
+
+        for channel in ch:
+            if 'a_ch' in channel:
+                ana_chan = int(channel[4:])
+
+                # int(True) = 1, int(False) = 0:
+                self._write(':OUTP{0} {1}'.format(ana_chan, int(ch[channel])))
+
+            if 'd_ch' in channel:
+                self.log.info('Digital Channel "{0}" is not implemented in the '
+                              'AWG M8195A series! Command skipped.'
+                              ''.format(ch[channel]))
+
+        return self.get_active_channels(ch=list(ch))
 
 
     def get_uploaded_asset_names(self):
