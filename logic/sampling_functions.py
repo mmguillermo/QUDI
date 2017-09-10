@@ -38,6 +38,7 @@ class SamplingFunctions():
         self._math_func['Cos']              = self._cos
         self._math_func['DoubleSin']        = self._doublesin
         self._math_func['TripleSin']        = self._triplesin
+        self._math_func['QuadSin']        = self._quadsin
 
         self._math_func['SinGauss']         = self._singauss
         self._math_func['CosGauss']         = self._cosgauss
@@ -118,6 +119,20 @@ class SamplingFunctions():
         self.func_config['TripleSin']['phase2']     = phase_def
         self.func_config['TripleSin']['phase3']     = phase_def
 
+        self.func_config['QuadSin'] = OrderedDict()
+        self.func_config['QuadSin']['frequency1'] = freq_def
+        self.func_config['QuadSin']['frequency2'] = freq_def
+        self.func_config['QuadSin']['frequency3'] = freq_def
+        self.func_config['QuadSin']['frequency4'] = freq_def
+        self.func_config['QuadSin']['amplitude1'] = ampl_def
+        self.func_config['QuadSin']['amplitude2'] = ampl_def
+        self.func_config['QuadSin']['amplitude3'] = ampl_def
+        self.func_config['QuadSin']['amplitude4'] = ampl_def
+        self.func_config['QuadSin']['phase1']     = phase_def
+        self.func_config['QuadSin']['phase2']     = phase_def
+        self.func_config['QuadSin']['phase3']     = phase_def
+        self.func_config['QuadSin']['phase4']     = phase_def
+
 
     def _idle(self, time_arr, parameters=None):
         result_arr = np.zeros(len(time_arr))
@@ -166,6 +181,25 @@ class SamplingFunctions():
         result_arr = amp1 * np.sin(2*np.pi * freq1 * time_arr + phase1)
         result_arr += amp2 * np.sin(2*np.pi * freq2 * time_arr + phase2)
         result_arr += amp3 * np.sin(2*np.pi * freq3 * time_arr + phase3)
+        return result_arr
+
+    def _quadsin(self, time_arr, parameters):
+        amp1 = 2*parameters['amplitude1'] #conversion so that the AWG actually outputs the specified voltage
+        amp2 = 2*parameters['amplitude2'] #conversion so that the AWG actually outputs the specified voltage
+        amp3 = 2*parameters['amplitude3'] #conversion so that the AWG actually outputs the specified voltage
+        amp4 = 2*parameters['amplitude4'] #conversion so that the AWG actually outputs the specified voltage
+        freq1 = parameters['frequency1']
+        freq2 = parameters['frequency2']
+        freq3 = parameters['frequency3']
+        freq4 = parameters['frequency4']
+        phase1 = np.pi * parameters['phase1'] / 180
+        phase2 = np.pi * parameters['phase2'] / 180
+        phase3 = np.pi * parameters['phase3'] / 180
+        phase4 = np.pi * parameters['phase4'] / 180
+        result_arr = amp1 * np.sin(2*np.pi * freq1 * time_arr + phase1)
+        result_arr += amp2 * np.sin(2*np.pi * freq2 * time_arr + phase2)
+        result_arr += amp3 * np.sin(2*np.pi * freq3 * time_arr + phase3)
+        result_arr += amp4 * np.sin(2*np.pi * freq4 * time_arr + phase4)
         return result_arr
 
     def _singauss(self, time_arr, parameters):
