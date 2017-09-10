@@ -42,6 +42,7 @@ class SamplesWriteMethods():
         self._write_to_file['seqx'] = self._write_seqx
         self._write_to_file['fpga'] = self._write_fpga
         self._write_to_file['pstream'] = self._write_pstream
+        self._write_to_file['bin8'] = self._write_bin8
         return
 
     def _write_wfmx(self, name, analog_samples, digital_samples, total_number_of_samples,
@@ -574,6 +575,69 @@ class SamplesWriteMethods():
         f = open(filepath, "wb")
         f.write(text[39:-1])
         f.close()
+
+    def _write_bin8(self, name, analog_samples, digital_samples, total_number_of_samples,
+                is_first_chunk, is_last_chunk):
+        """
+        Appends a sampled chunk of a whole waveform to a bin8-file. This file
+        format will work with the Keysight AWG models.
+        Create the file if it is the first chunk.
+        If both flags (is_first_chunk, is_last_chunk) are set to TRUE it means
+        that the whole ensemble is written as a whole in one big chunk.
+
+        @param name: string, represents the name of the sampled ensemble
+        @param analog_samples: float32 numpy ndarray, contains the
+                                       samples for the analog channels that
+                                       are to be written by this function call.
+        @param digital_samples: bool numpy ndarray, contains the samples
+                                      for the digital channels that
+                                      are to be written by this function call.
+        @param total_number_of_samples: int, The total number of samples in the
+                                        entire waveform. Has to be known it
+                                        advance.
+        @param is_first_chunk: bool, indicates if the current chunk is the
+                               first write to this file.
+        @param is_last_chunk: bool, indicates if the current chunk is the last
+                              write to this file.
+
+        @return list: the list contains the string names of the created files
+                      for the passed presampled arrays
+        """
+
+        # record the name of the created files
+        created_files = []
+
+        # analyze the activation_config and extract analogue channel numbers
+        ana_chnl_numbers = [int(chnl.split('ch')[-1]) for chnl in self.activation_config if
+                            'a_ch' in chnl]
+
+        max_ampl = 0.5
+
+        # digital samples are being ignored.
+
+        for channel_index, channel_number in enumerate(ana_chnl_numbers):
+
+            # make the filename and filepath right
+            filename = name + '_ch' + str(channel_number) + '.bin8'
+            created_files.append(filename)
+            filepath = os.path.join(self.waveform_dir, filename)
+
+            with open(filepath, 'ab') as wfm_file:
+
+                # convert samples to the range of an int8 number and cut then
+                # all additional numbers away.
+                wfm_file.write((((analog_samples[channel_index]+max_ampl)*255)-128).astype('int8'))
+
+                # check for granularity of 256 samples and add zeros if needed.
+                if is_last_chunk and (total_number_of_samples%256 != 0):
+                    num_to_append = 256 - total_number_of_samples%256
+                    wfm_file.write(np.zeros(num_to_append, dtype=np.int8))
+
+
+        return created_files
+
+
+
 
 def _convert_to_bitmask(active_channels):
     """ Convert a list of channels into a bitmask.
