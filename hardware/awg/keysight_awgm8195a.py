@@ -25,6 +25,8 @@ import visa
 import time
 import numpy as np
 from collections import OrderedDict
+from fnmatch import fnmatch
+
 
 from core.module import Base, ConfigOption
 from interface.pulser_interface import PulserInterface, PulserConstraints
@@ -48,6 +50,13 @@ class AWGM8195A(Base, PulserInterface):
     ftp_root_dir = ConfigOption('ftp_root_dir', default='C:\\inetpub\\ftproot',
                                 missing='warn')
 
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
+
+        # AWG5002C has possibility for sequence output, but it was not tested
+        # yet. Therefore set it to False. If it is implemented, set it to True!
+        self.sequence_mode = False
+        self.current_loaded_asset = ''
 
     def on_activate(self):
         """ Initialisation performed during activation of the module. """
@@ -528,6 +537,178 @@ class AWGM8195A(Base, PulserInterface):
         time.sleep(0.2)
         return self.get_sample_rate()
 
+
+
+
+    def get_uploaded_asset_names(self):
+        """ Retrieve the names of all uploaded assets on the device.
+
+        @return list: List of all uploaded asset name strings in the current
+                      device directory.
+
+        Unused for digital pulse generators without sequence storage capability
+        (PulseBlaster, FPGA).
+        """
+        uploaded_files = self._get_filenames_on_device()
+        name_list = []
+        for filename in uploaded_files:
+            if fnmatch(filename, '*_ch?.bin8'):
+                asset_name = filename.rsplit('_', 1)[0]
+                if asset_name not in name_list:
+                    name_list.append(asset_name)
+        return name_list
+
+    def get_saved_asset_names(self):
+        """ Retrieve the names of all sampled and saved assets on the host PC.
+        This is no list of the file names.
+
+        @return list: List of all saved asset name strings in the current
+                      directory of the host PC.
+        """
+        # list of all files in the waveform directory ending with .wfm
+        file_list = self._get_filenames_on_host()
+        # exclude the channel specifier for multiple analog channels and create return list
+        saved_assets = []
+        for filename in file_list:
+            if fnmatch(filename, '*_ch?.bin8'):
+                asset_name = filename.rsplit('_', 1)[0]
+                if asset_name not in saved_assets:
+                    saved_assets.append(asset_name)
+        return saved_assets
+
+    def delete_asset(self, asset_name):
+        """ Delete all files associated with an asset with the passed
+            asset_name from the device memory.
+
+        @param str asset_name: The name of the asset to be deleted
+                               Optionally a list of asset names can be passed.
+
+        @return list: a list with strings of the files which were deleted.
+
+        Unused for digital pulse generators without sequence storage capability
+        (PulseBlaster, FPGA).
+        """
+        if not isinstance(asset_name, list):
+            asset_name = [asset_name]
+
+        # get all uploaded files
+        uploaded_files = self._get_filenames_on_device()
+
+        # list of uploaded files to be deleted
+        files_to_delete = []
+        # determine files to delete
+        for name in asset_name:
+            for filename in uploaded_files:
+                if fnmatch(filename, name+'_ch?.bin8'):
+                    files_to_delete.append(filename)
+
+        #FIXME: the files are not actually deleted!!!
+        self.log.error('"delete_asset" not fully implemented!')
+
+        # clear the AWG if the deleted asset is the currently loaded asset
+        # if self.current_loaded_asset == asset_name:
+        #     self.clear_all()
+        return files_to_delete
+
+    def set_asset_dir_on_device(self, dir_path):
+        """ Change the directory where the assets are stored on the device.
+
+        @param string dir_path: The target directory
+
+        @return int: error code (0:OK, -1:error)
+
+        Unused for digital pulse generators without changeable file structure
+        (PulseBlaster, FPGA).
+        """
+        #FIXME: implement that!
+
+        self.log.error('"set_asset_dir_on_device" not fully implemented!')
+
+        return 0
+
+    def get_asset_dir_on_device(self):
+        """ Ask for the directory where the assets are stored on the device.
+
+        @return string: The current sequence directory
+
+        Unused for digital pulse generators without changeable file structure
+        (PulseBlaster, FPGA).
+        """
+
+        #FIXME: implement that!
+        self.log.error('"get_asset_dir_on_device" not fully implemented!')
+
+        return ''
+
+    def get_interleave(self):
+        """ Check whether Interleave is on in AWG.
+        Unused for pulse generator hardware other than an AWG. The AWG M8195A
+        Series does not have an interleave mode and this method exists only for
+        compability reasons.
+
+        @return bool: will be always False since no interleave functionality
+        """
+
+        return False
+
+    def set_interleave(self, state=False):
+        """ Turns the interleave of an AWG on or off.
+
+        @param bool state: The state the interleave should be set to
+                           (True: ON, False: OFF)
+
+        @return bool: actual interleave status (True: ON, False: OFF)
+
+        Note: After setting the interleave of the device, retrieve the
+              interleave again and use that information for further processing.
+
+        Unused for pulse generator hardware other than an AWG. The AWG M8195A
+        Series does not have an interleave mode and this method exists only for
+        compability reasons.
+        """
+        self.log.warning('Interleave mode not available for the AWG M8195A '
+                        'Series!\n'
+                        'Method call will be ignored.')
+        return self.get_interleave()
+
+    def tell(self, command):
+        """Send a command string to the AWG.
+
+        @param command: string containing the command
+
+        @return int: error code (0:OK, -1:error)
+        """
+
+        self._write(command)
+        return 0
+
+    def ask(self, question):
+        """ Asks the device a 'question' and receive an answer from it.
+
+        @param string question: string containing the command
+
+        @return string: the answer of the device to the 'question'
+        """
+
+        return self._ask(question)
+
+    def reset(self):
+        """Reset the device.
+
+        @return int: error code (0:OK, -1:error)
+        """
+        self._write('*RST')
+
+        return 0
+
+    def has_sequence_mode(self):
+        """ Asks the pulse generator whether sequence mode exists.
+
+        @return: bool, True for yes, False for no.
+        """
+        return self.sequence_mode
+
+
 ################################################################################
 ###                         Non interface methods                            ###
 ################################################################################
@@ -539,7 +720,8 @@ class AWGM8195A(Base, PulserInterface):
 
         @return: the received answer
         """
-        return self._awg.query(question)
+        # cut away the characters\r and \n.
+        return self._awg.query(question).strip()
 
     def _write(self, cmd, wait=True, write_val=False):
         """ Write wrapper.
@@ -555,6 +737,7 @@ class AWGM8195A(Base, PulserInterface):
             statuscode = self._awg.write(cmd)
         if wait:
             self._awg.write('*WAI')
+
         return statuscode
 
 
