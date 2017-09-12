@@ -111,36 +111,41 @@ class AWGM8195A(Base, PulserInterface):
         #   - Socket port: 5025 (e.g. TCPIP0::localhost::5025::SOCKET)
         #   - Telnet port: 5024
         #   - HiSLIP: 0 (e.g. TCPIP0::localhost::hislip0::INSTR)
-        #   -  VXI-11.3: 0 (e.g. TCPIP0::localhost::inst0::INSTR)
-
+        #   -  VXI-11.3: 0 (e.g. TCPIP0::localhost::inst0::INSTR) # PXI19::0::0::INSTR
 
 
         self._rm = visa.ResourceManager()
-        if self.visa_address not in self._rm.list_resources():
+        try:
+            self._awg = self._rm.open_resource(self.visa_address)
+
+            # Set data transfer format (datatype, is_big_endian, container)
+            self._awg.values_format.use_binary('f', False, np.array)
+
+            self._awg.timeout = self.awg_timeout * 1000  # should be in ms
+
+            self.connected = True
+
+            mess = self.ask('*IDN?').split(',')
+            self._BRAND = mess[0]
+            self._MODEL = mess[1]
+            self._SERIALNUMBER = mess[2]
+            self._FIRMWARE_VERSION = mess[3]
+
+            self.log.info('Load the device model "{0}" from "{1}" with the '
+                          'serial number "{2}" and the firmware version "{3}" '
+                          'successfully.'.format(self._MODEL, self._BRAND,
+                                                 self._SERIALNUMBER,
+                                                 self._FIRMWARE_VERSION))
+
+        except:
             self.log.error('VISA address "{0}" not found by the pyVISA '
                            'resource manager.\nCheck the connection by using '
                            'for example "Agilent Connection Expert".'
                            ''.format(self.visa_address))
-        else:
-            self._awg = self._rm.open_resource(self.visa_address)
-            # Set data transfer format (datatype, is_big_endian, container)
-            self._awg.values_format.use_binary('f', False, np.array)
+            return
 
-            self._awg.timeout = self.awg_timeout*1000 # should be in ms
+        self._init_device()
 
-            self.connected = True
-
-
-        self.sample_rate = self.get_sample_rate()
-        self.amplitude_list, self.offset_list = self.get_analog_level()
-        self.markers_low, self.markers_high = self.get_digital_level()
-        self.is_output_enabled = self._is_output_on()
-        self.use_sequencer = self.has_sequence_mode()
-        self.active_channel = self.get_active_channels()
-        self.interleave = self.get_interleave()
-        self.current_loaded_asset = ''
-        self._init_loaded_asset()
-        self.current_status = 0
 
 
     def on_deactivate(self):
@@ -152,6 +157,48 @@ class AWGM8195A(Base, PulserInterface):
             self.log.warning('Closing AWG connection using pyvisa failed.')
         self.log.info('Closed connection to AWG')
         self.connected = False
+
+    def _init_device(self):
+        """ Run those methods during the initialization process."""
+
+        # Sec. 6.21.2 in manual:
+        # To prepare your module for arbitrary waveform generation follow these
+        # steps:
+        # Set Instrument Mode (number of channels), Memory Sample Rate Divider,
+        # and memory usage of the channels (Internal/Extended):
+        self.tell(':INSTrument:DACMode FOUR')  # all four channels output
+        self.tell(':INST:MEM:EXT:RDIV DIV4')   # set the sample rate divider
+        self.tell(':FUNC:MODE ARB')            # Set mode to arbitrary
+        self.tell(':TRAC1:MMOD EXT')            # select extended Memory Mode
+        self.tell(':TRAC2:MMOD EXT')
+        self.tell(':TRAC3:MMOD EXT')
+        self.tell(':TRAC4:MMOD EXT')
+        
+        # Define a segment using the various forms of the
+        #       :TRAC[1|2|3|4]:DEF command.
+        # Fill the segment with sample values using
+        #       :TRAC[1|2|3|4]:DATA.
+        # Signal generation starts after calling INIT:IMM.
+        # Use the
+        #       :TRAC[1|2|3|4]:CAT?
+        # query to read the length of a waveform
+        # loaded into the memory of a channel.
+        # Use the
+        #       :TRAC[1|2|3|4]:DEL:ALL
+        # command to delete a waveform from the memory of a channel.
+
+
+        self.sample_rate = self.get_sample_rate()
+        self.amplitude_list, self.offset_list = self.get_analog_level()
+        self.markers_low, self.markers_high = self.get_digital_level()
+        self.is_output_enabled = self._is_output_on()
+        self.use_sequencer = self.has_sequence_mode()
+        self.active_channel = self.get_active_channels()
+        self.interleave = self.get_interleave()
+        self.current_loaded_asset = ''
+        self.current_status = 0
+
+
 
 
     def get_constraints(self):
@@ -190,7 +237,7 @@ class AWGM8195A(Base, PulserInterface):
         # The compatible file formats are hardware specific.
         constraints.waveform_format = ['bin8']
 
-        if self._AWG_MODEL == 'M8195A':
+        if self._MODEL == 'M8195A':
             constraints.sample_rate.min = 53.76e9
             constraints.sample_rate.max = 65.0e9
             constraints.sample_rate.step = 1.0e7
@@ -199,13 +246,24 @@ class AWGM8195A(Base, PulserInterface):
             self.log.error('The current AWG model has no valid sample rate '
                            'constraints')
 
-        constraints.a_ch_amplitude.min = 0.0375
-        constraints.a_ch_amplitude.max = 0.5    # corresponds to 1Vpp
+        constraints.a_ch_amplitude.min = 0.075
+        constraints.a_ch_amplitude.max = 1    # corresponds to 1Vpp
         constraints.a_ch_amplitude.step = 0.002 # actually 1Vpp/2^8=0.0019..
         constraints.a_ch_amplitude.default = 0.5
 
         # for now, no digital/marker channel.
-        #FIXME: implement marker channel configuration.
+        #FIXME: implement marker channel configuration, not sure about those values:
+        # have a look at OutputLowLevel.
+        # constraints.d_ch_low.min = -0.98125
+        # constraints.d_ch_low.max = -0.01875
+        # constraints.d_ch_low.step = 0.00025
+        # constraints.d_ch_low.default = 0.98125
+        #
+        # have a look at OutputHighLevel.
+        # constraints.d_ch_high.min = 0.05625
+        # constraints.d_ch_high.max = 0.98125
+        # constraints.d_ch_high.step = 0.00025
+        # constraints.d_ch_high.default = 0.98125
 
         constraints.sampled_file_length.min = 256
         constraints.sampled_file_length.max = 2_000_000_000
@@ -240,7 +298,7 @@ class AWGM8195A(Base, PulserInterface):
         # are stated, where only the generic names should be used. The names
         # for the different configurations can be customary chosen.
         activation_config = OrderedDict()
-        if self._AWG_MODEL == 'M8195A':
+        if self._MODEL == 'M8195A':
             activation_config['all'] = ['a_ch1', 'a_ch2', 'a_ch3', 'a_ch4']
             #FIXME: this awg model supports more channel configuration!
             #       Implement those! But keep in mind that the format of the
@@ -264,10 +322,10 @@ class AWGM8195A(Base, PulserInterface):
         # self._activate_awg_mode()
 
 
-        self._write(':OUTP1 ON')
-        self._write(':OUTP2 ON')
-        self._write(':OUTP3 ON')
-        self._write(':OUTP4 ON')
+        self.tell(':OUTP1 ON')
+        self.tell(':OUTP2 ON')
+        self.tell(':OUTP3 ON')
+        self.tell(':OUTP4 ON')
 
         # Sec. 6.4 from manual:
         # In the program it is recommended to send the command for starting
@@ -276,7 +334,7 @@ class AWGM8195A(Base, PulserInterface):
         # loading a waveform) are avoided and optimum execution performance is
         # achieved.
 
-        self._write(':INIT:IMM')
+        self.tell(':INIT:IMM')
 
         # wait until the AWG is actually running
         while not self._is_output_on():
@@ -294,10 +352,10 @@ class AWGM8195A(Base, PulserInterface):
                                  class variable status_dic.)
         """
 
-        self._write(':OUTP1 OFF')
-        self._write(':OUTP2 OFF')
-        self._write(':OUTP3 OFF')
-        self._write(':OUTP4 OFF')
+        self.tell(':OUTP1 OFF')
+        self.tell(':OUTP2 OFF')
+        self.tell(':OUTP3 OFF')
+        self.tell(':OUTP4 OFF')
 
         # wait until the AWG has actually stopped
         while self._is_output_on():
@@ -352,19 +410,15 @@ class AWGM8195A(Base, PulserInterface):
         if load_dict is None:
             load_dict = {}
 
-        # select extended Memory Mode
-        self._write(':TRAC1:MMOD EXT')
-        self._write(':TRAC2:MMOD EXT')
-        self._write(':TRAC3:MMOD EXT')
-        self._write(':TRAC4:MMOD EXT')
+
 
         # # set the waveform directory:
-        # self._write(':MMEM:CDIR {0}'.format(r"C:\Users\Name\Documents"))
+        # self.tell(':MMEM:CDIR {0}'.format(r"C:\Users\Name\Documents"))
         #
         # # Get the waveform directory:
-        # dir = self._ask(':MMEM:CDIR?')
+        # dir = self.ask(':MMEM:CDIR?')
 
-        path = self.ftp_root_directory
+        path = self.ftp_root_dir
 
         # Find all files associated with the specified asset name
         file_list = self._get_filenames_on_device()
@@ -379,7 +433,7 @@ class AWGM8195A(Base, PulserInterface):
         for file in file_list:
             if file == asset_name+'_ch1.bin8':
                 filepath = os.path.join(path, asset_name + '_ch1.bin8')
-                self._write(':TRAC1:IMP {0},{1},{2}'.format(segment, offset,
+                self.tell(':TRAC1:IMP {0},{1},{2}'.format(segment, offset,
                                                             filepath))
                 # if the asset is not a sequence file, then it must be a wfm
                 # file and either both or one of the channels should contain
@@ -389,7 +443,7 @@ class AWGM8195A(Base, PulserInterface):
 
             elif file == asset_name+'_ch2.bin8':
                 filepath = os.path.join(path, asset_name + '_ch2.bin8')
-                self._write(':TRAC2:IMP {0},{1},{2}'.format(segment, offset,
+                self.tell(':TRAC2:IMP {0},{1},{2}'.format(segment, offset,
                                                             filepath))
                 # if the asset is not a sequence file, then it must be a wfm
                 # file and either both or one of the channels should contain
@@ -399,7 +453,7 @@ class AWGM8195A(Base, PulserInterface):
 
             elif file == asset_name+'_ch3.bin8':
                 filepath = os.path.join(path, asset_name + '_ch3.bin8')
-                self._write(':TRAC3:IMP {0},{1},{2}'.format(segment, offset,
+                self.tell(':TRAC3:IMP {0},{1},{2}'.format(segment, offset,
                                                             filepath))
                 # if the asset is not a sequence file, then it must be a wfm
                 # file and either both or one of the channels should contain
@@ -409,7 +463,7 @@ class AWGM8195A(Base, PulserInterface):
 
             elif file == asset_name+'_ch4.bin8':
                 filepath = os.path.join(path, asset_name + '_ch4.bin8')
-                self._write(':TRAC4:IMP {0},{1},{2}'.format(segment, offset,
+                self.tell(':TRAC4:IMP {0},{1},{2}'.format(segment, offset,
                                                             filepath))
                 # if the asset is not a sequence file, then it must be a wfm
                 # file and either both or one of the channels should contain
@@ -425,7 +479,7 @@ class AWGM8195A(Base, PulserInterface):
             file_name = str(load_dict[channel_num]) + '_ch{0}.bin8'.format(int(channel_num))
             filepath = os.path.join(path, file_name)
 
-            self._write(':TRAC{0}:IMP {1},{2},{3}'.format(channel_num,
+            self.tell(':TRAC{0}:IMP {1},{2},{3}'.format(channel_num,
                                                           segment,
                                                           offset,
                                                           filepath))
@@ -453,10 +507,10 @@ class AWGM8195A(Base, PulserInterface):
         storage capability (PulseBlaster, FPGA).
         """
         segment = 1
-        self._write(':TRAC1:DEL {0}'.format(segment))
-        self._write(':TRAC2:DEL {0}'.format(segment))
-        self._write(':TRAC3:DEL {0}'.format(segment))
-        self._write(':TRAC4:DEL {0}'.format(segment))
+        self.tell(':TRAC1:DEL {0}'.format(segment))
+        self.tell(':TRAC2:DEL {0}'.format(segment))
+        self.tell(':TRAC3:DEL {0}'.format(segment))
+        self.tell(':TRAC4:DEL {0}'.format(segment))
         self.current_loaded_asset = ''
         return
 
@@ -482,28 +536,28 @@ class AWGM8195A(Base, PulserInterface):
         # ask 3 times
         for _ in range(3):
             try:
-                state = int(self._ask(':OUTP1?'))
+                state = int(self.ask(':OUTP1?'))
                 break
             except:
                 state = -1
 
         for _ in range(3):
             try:
-                state = int(self._ask(':OUTP2?')) | state
+                state = int(self.ask(':OUTP2?')) | state
                 break
             except:
                 state = -1
 
         for _ in range(3):
             try:
-                state = int(self._ask(':OUTP3?')) | state
+                state = int(self.ask(':OUTP3?')) | state
                 break
             except:
                 state = -1
 
         for _ in range(3):
             try:
-                state = int(self._ask(':OUTP4?')) | state
+                state = int(self.ask(':OUTP4?')) | state
                 break
             except:
                 state = -1
@@ -519,7 +573,7 @@ class AWGM8195A(Base, PulserInterface):
         retrieve the current sample rate directly from the device.
         """
 
-        self.sample_rate = float(self._ask(':FREQ:RAST?'))
+        self.sample_rate = float(self.ask(':FREQ:RAST?'))
         return self.sample_rate
 
     def set_sample_rate(self, sample_rate):
@@ -534,7 +588,7 @@ class AWGM8195A(Base, PulserInterface):
               further processing.
         """
 
-        self._write(':FREQ:RAST {0:.4G}GHz\n'.format(sample_rate/1e9))
+        self.tell(':FREQ:RAST {0:.4G}GHz\n'.format(sample_rate/1e9))
         time.sleep(0.2)
         return self.get_sample_rate()
 
@@ -589,22 +643,22 @@ class AWGM8195A(Base, PulserInterface):
 
             # since the available channels are not going to change for this
             # device you are asking directly:
-            amp['a_ch1'] = float(self._ask(':VOLT1?'))
-            amp['a_ch2'] = float(self._ask(':VOLT2?'))
-            amp['a_ch3'] = float(self._ask(':VOLT3?'))
-            amp['a_ch4'] = float(self._ask(':VOLT4?'))
+            amp['a_ch1'] = float(self.ask(':VOLT1?'))
+            amp['a_ch2'] = float(self.ask(':VOLT2?'))
+            amp['a_ch3'] = float(self.ask(':VOLT3?'))
+            amp['a_ch4'] = float(self.ask(':VOLT4?'))
 
-            off['a_ch1'] = float(self._ask(':VOLT1:OFFS?'))
-            off['a_ch2'] = float(self._ask(':VOLT2:OFFS?'))
-            off['a_ch3'] = float(self._ask(':VOLT3:OFFS?'))
-            off['a_ch4'] = float(self._ask(':VOLT4:OFFS?'))
+            off['a_ch1'] = float(self.ask(':VOLT1:OFFS?'))
+            off['a_ch2'] = float(self.ask(':VOLT2:OFFS?'))
+            off['a_ch3'] = float(self.ask(':VOLT3:OFFS?'))
+            off['a_ch4'] = float(self.ask(':VOLT4:OFFS?'))
 
 
         else:
 
             for a_ch in amplitude:
                 ch_num = int(re.search(pattern, a_ch).group(0))
-                amp[a_ch] = float(self._ask(':VOLT{0}?'.format(ch_num)))
+                amp[a_ch] = float(self.ask(':VOLT{0}?'.format(ch_num)))
 
             for a_ch in offset:
                 ch_num = int(re.search(pattern, a_ch).group(0))
@@ -716,6 +770,7 @@ class AWGM8195A(Base, PulserInterface):
 
         # no digital channel implemented.
         #FIXME: if marker are implemented, adapt this output
+        # use self.ask(':VOLT:HIGH?') and self.ask(':VOLT:LOW?')
         return {}, {}
 
     def set_digital_level(self, low=None, high=None):
@@ -776,17 +831,17 @@ class AWGM8195A(Base, PulserInterface):
         if ch ==[]:
 
             # because 0 = False and 1 = True
-            active_ch['a_ch1'] = bool(int(self._ask(':OUTP1?')))
-            active_ch['a_ch2'] = bool(int(self._ask(':OUTP2?')))
-            active_ch['a_ch3'] = bool(int(self._ask(':OUTP3?')))
-            active_ch['a_ch4'] = bool(int(self._ask(':OUTP4?')))
+            active_ch['a_ch1'] = bool(int(self.ask(':OUTP1?')))
+            active_ch['a_ch2'] = bool(int(self.ask(':OUTP2?')))
+            active_ch['a_ch3'] = bool(int(self.ask(':OUTP3?')))
+            active_ch['a_ch4'] = bool(int(self.ask(':OUTP4?')))
 
         else:
 
             for channel in ch:
                 if 'a_ch' in channel:
                     ana_chan = int(channel[4:])
-                    active_ch[channel] = bool(int(self._ask(':OUTP{0}?'.format(ana_chan))))
+                    active_ch[channel] = bool(int(self.ask(':OUTP{0}?'.format(ana_chan))))
 
                 elif 'd_ch'in channel:
                     self.log.warning('Digital channel "{0}" cannot be '
@@ -830,7 +885,7 @@ class AWGM8195A(Base, PulserInterface):
                 ana_chan = int(channel[4:])
 
                 # int(True) = 1, int(False) = 0:
-                self._write(':OUTP{0} {1}'.format(ana_chan, int(ch[channel])))
+                self.tell(':OUTP{0} {1}'.format(ana_chan, int(ch[channel])))
 
             if 'd_ch' in channel:
                 self.log.info('Digital Channel "{0}" is not implemented in the '
@@ -971,16 +1026,29 @@ class AWGM8195A(Base, PulserInterface):
                         'Method call will be ignored.')
         return self.get_interleave()
 
-    def tell(self, command):
+    def tell(self, command, wait=True, write_val=False, check_err=True):
         """Send a command string to the AWG.
 
         @param command: string containing the command
+        @param bool wait: optional, is the wait statement should be skipped.
+        @param bool write_val: indicate whether binary values are following
+        @param bool check_err: Perform an error check after each tell
 
-        @return int: error code (0:OK, -1:error)
+        @return: str: the statuscode of the write command.
         """
 
-        self._write(command)
-        return 0
+        if write_val:
+            statuscode = self._awg.write_values(command)
+        else:
+            statuscode = self._awg.write(command)
+
+        if check_err:
+            self._check_for_err()
+        if wait:
+            self._awg.write('*WAI')
+
+        return statuscode
+
 
     def ask(self, question):
         """ Asks the device a 'question' and receive an answer from it.
@@ -990,14 +1058,15 @@ class AWGM8195A(Base, PulserInterface):
         @return string: the answer of the device to the 'question'
         """
 
-        return self._ask(question)
+        # cut away the characters\r and \n.
+        return self._awg.query(question).strip()
 
     def reset(self):
         """Reset the device.
 
         @return int: error code (0:OK, -1:error)
         """
-        self._write('*RST')
+        self.tell('*RST')
 
         return 0
 
@@ -1013,33 +1082,20 @@ class AWGM8195A(Base, PulserInterface):
 ###                         Non interface methods                            ###
 ################################################################################
 
-    def _ask(self, question):
-        """ Ask wrapper.
+    def _check_for_err(self):
+        """ Ask the error status of the device as long as there is no error."""
 
-        @param str question: a question to the device
-
-        @return: the received answer
-        """
-        # cut away the characters\r and \n.
-        return self._awg.query(question).strip()
-
-    def _write(self, cmd, wait=True, write_val=False):
-        """ Write wrapper.
-
-        @param str cmd: a command to the device
-        @param bool wait: optional, is the wait statement should be skipped.
-
-        @return: str: the statuscode of the write command.
-        """
-        if write_val:
-            statuscode = self._awg.write_values(cmd)
-        else:
-            statuscode = self._awg.write(cmd)
-        if wait:
-            self._awg.write('*WAI')
-
-        return statuscode
-
+        err_count = 0
+        # Limit the number of maximal error outputs to prevent an inf loop:
+        while err_count < 20:
+            err, mess = self.ask(':SYSTem:ERRor?').split(',')
+            err = int(err)
+            if err == 0:
+                # no error
+                break
+            else:
+                self.log.warning('Errorcode "{0}": {1}'.format(err, mess))
+            err_count += 1
 
     def _is_output_on(self):
         """
@@ -1050,9 +1106,22 @@ class AWGM8195A(Base, PulserInterface):
 
         # since output 4 was the last one to be set, assume that all other are
         # already set
-        run_state = bool(int(self._ask(':OUTP4?')))
+        run_state = bool(int(self.ask(':OUTP4?')))
         return run_state
 
+
+    def _get_dir_for_name(self, name):
+        """ Get the path to the pulsed sub-directory 'name'.
+
+        @param str name:  name of the folder
+        @return: str, absolute path to the directory with folder 'name'.
+        """
+
+        path = os.path.join(self.pulsed_file_dir, name)
+        if not os.path.exists(path):
+            os.makedirs(os.path.abspath(path))
+
+        return os.path.abspath(path)
 
     def _get_filenames_on_host(self):
         """ Get the full filenames of all assets saved on the host PC.
@@ -1090,17 +1159,17 @@ class AWGM8195A(Base, PulserInterface):
 
 
         # select extended Memory Mode
-        self._write(':TRAC1:MMOD EXT')
-        self._write(':TRAC2:MMOD EXT')
-        self._write(':TRAC3:MMOD EXT')
-        self._write(':TRAC4:MMOD EXT')
+        self.tell(':TRAC1:MMOD EXT')
+        self.tell(':TRAC2:MMOD EXT')
+        self.tell(':TRAC3:MMOD EXT')
+        self.tell(':TRAC4:MMOD EXT')
 
         segment = 1     # always write in segment 1
         length = len(asset_name_p)
-        self._write(':TRAC{0}:DEF {1},{2},0'.format(channel, segment, length))
+        self.tell(':TRAC{0}:DEF {1},{2},0'.format(channel, segment, length))
 
 
-        self._write(':TRAC{0}:DATA {1},0,{2}'.format(channel, segment,
+        self.tell(':TRAC{0}:DATA {1},0,{2}'.format(channel, segment,
                                                      asset_name_p),
                     write_val=True)
 
