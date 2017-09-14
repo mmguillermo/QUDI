@@ -27,6 +27,7 @@ import time
 import numpy as np
 from collections import OrderedDict
 from fnmatch import fnmatch
+from ftplib import FTP
 
 
 from core.module import Base, ConfigOption
@@ -46,10 +47,21 @@ class AWGM8195A(Base, PulserInterface):
 
     # config options
     visa_address = ConfigOption(name='awg_visa_address', missing='error')
+    ip_address = ConfigOption(name='ip_address', missing='error')
     awg_timeout = ConfigOption(name='awg_timeout', default=10, missing='warn')
     # root directory on the other pc
     ftp_root_dir = ConfigOption('ftp_root_dir', default='C:\\inetpub\\ftproot',
                                 missing='warn')
+    user = ConfigOption('ftp_user', 'anonymous', missing='warn')
+    passwd = ConfigOption('ftp_passwd', 'anonymous@', missing='warn')
+
+
+    # to be able to use all the 4 channels of the AWG with the External Memory
+    # the sample rate divider has to be set to 4, which reduces the actual
+    # sample rate with which the device samples the data. Internally it will
+    # always operate at 53-65GS/s, but the data throughput will be divided by
+    # the _sample_rate_div.
+    _sample_rate_div = 4
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -58,6 +70,7 @@ class AWGM8195A(Base, PulserInterface):
         # yet. Therefore set it to False. If it is implemented, set it to True!
         self.sequence_mode = False
         self.current_loaded_asset = ''
+        self.asset_dir = '\\waves'
 
     def on_activate(self):
         """ Initialisation performed during activation of the module. """
@@ -87,7 +100,7 @@ class AWGM8195A(Base, PulserInterface):
                              ''.format(self.pulsed_file_dir))
 
         # here the samples files are stored on host PC:
-        self.host_waveform_directory = self._get_dir_for_name('sampled_hardware_files')
+        self.host_waveform_dir = self._get_dir_for_name('sampled_hardware_files')
 
         self.connected = False
 
@@ -167,13 +180,14 @@ class AWGM8195A(Base, PulserInterface):
         # Set Instrument Mode (number of channels), Memory Sample Rate Divider,
         # and memory usage of the channels (Internal/Extended):
         self.tell(':INSTrument:DACMode FOUR')  # all four channels output
-        self.tell(':INST:MEM:EXT:RDIV DIV4')   # set the sample rate divider
-        self.tell(':FUNC:MODE ARB')            # Set mode to arbitrary
+        # set the sample rate divider:
+        self.tell(':INST:MEM:EXT:RDIV DIV{0}'.format(self._sample_rate_div))
+        self.tell(':FUNC:MODE ARB')             # Set mode to arbitrary
         self.tell(':TRAC1:MMOD EXT')            # select extended Memory Mode
-        self.tell(':TRAC2:MMOD EXT')
+        self.tell(':TRAC2:MMOD EXT')            # for all channels
         self.tell(':TRAC3:MMOD EXT')
         self.tell(':TRAC4:MMOD EXT')
-        
+
         # Define a segment using the various forms of the
         #       :TRAC[1|2|3|4]:DEF command.
         # Fill the segment with sample values using
@@ -188,8 +202,14 @@ class AWGM8195A(Base, PulserInterface):
         # command to delete a waveform from the memory of a channel.
 
 
+        # Set the directory:
+        self.tell(':MMEM:CDIR "C:\\inetpub\\ftproot"')
+
         self.sample_rate = self.get_sample_rate()
-        self.amplitude_list, self.offset_list = self.get_analog_level()
+
+        ampl = {'a_ch1': 1.0, 'a_ch2': 1.0, 'a_ch3': 1.0, 'a_ch4': 1.0}
+
+        self.amplitude_list, self.offset_list = self.set_analog_level(amplitude=ampl)
         self.markers_low, self.markers_high = self.get_digital_level()
         self.is_output_enabled = self._is_output_on()
         self.use_sequencer = self.has_sequence_mode()
@@ -197,8 +217,6 @@ class AWGM8195A(Base, PulserInterface):
         self.interleave = self.get_interleave()
         self.current_loaded_asset = ''
         self.current_status = 0
-
-
 
 
     def get_constraints(self):
@@ -238,16 +256,16 @@ class AWGM8195A(Base, PulserInterface):
         constraints.waveform_format = ['bin8']
 
         if self._MODEL == 'M8195A':
-            constraints.sample_rate.min = 53.76e9
-            constraints.sample_rate.max = 65.0e9
+            constraints.sample_rate.min = 53.76e9/self._sample_rate_div
+            constraints.sample_rate.max = 65.0e9/self._sample_rate_div
             constraints.sample_rate.step = 1.0e7
-            constraints.sample_rate.default = 65.00e9
+            constraints.sample_rate.default = 65.00e9/self._sample_rate_div
         else:
             self.log.error('The current AWG model has no valid sample rate '
                            'constraints')
 
         constraints.a_ch_amplitude.min = 0.075
-        constraints.a_ch_amplitude.max = 1    # corresponds to 1Vpp
+        constraints.a_ch_amplitude.max = 1.0    # corresponds to 1Vpp
         constraints.a_ch_amplitude.step = 0.002 # actually 1Vpp/2^8=0.0019..
         constraints.a_ch_amplitude.default = 0.5
 
@@ -334,11 +352,12 @@ class AWGM8195A(Base, PulserInterface):
         # loading a waveform) are avoided and optimum execution performance is
         # achieved.
 
-        self.tell(':INIT:IMM')
-
         # wait until the AWG is actually running
         while not self._is_output_on():
             time.sleep(0.25)
+
+        self.tell(':INIT:IMM')
+
 
         self.current_status = 1
         self.is_output_enabled = True
@@ -352,6 +371,8 @@ class AWGM8195A(Base, PulserInterface):
                                  class variable status_dic.)
         """
 
+        self.tell(':ABOR')
+
         self.tell(':OUTP1 OFF')
         self.tell(':OUTP2 OFF')
         self.tell(':OUTP3 OFF')
@@ -363,6 +384,27 @@ class AWGM8195A(Base, PulserInterface):
         self.current_status = 0
         self.is_output_enabled = False
         return self.current_status
+
+
+    def _send_file(self, filename):
+        """ Sends an already hardware specific waveform file to the pulse
+            generators waveform directory.
+
+        @param string filename: The file name of the source file
+
+        @return int: error code (0:OK, -1:error)
+
+        Unused for digital pulse generators without sequence storage capability
+        (PulseBlaster, FPGA).
+        """
+
+        filepath = os.path.join(self.host_waveform_dir, filename)
+
+        with FTP(self.ip_address) as ftp:
+            ftp.login(self.user, self.passwd) # login as default user anonymous, passwd anonymous@
+            ftp.cwd(self.asset_dir)
+            with open(filepath, 'rb') as uploaded_file:
+                ftp.storbinary('STOR '+filename, uploaded_file)
 
     def upload_asset(self, asset_name=None):
         """ Upload an already hardware conform file to the device.
@@ -376,13 +418,29 @@ class AWGM8195A(Base, PulserInterface):
         """
         # check input
         if asset_name is None:
-            self.log.warning('No asset name provided for upload!\nCorrect that!\n'
-                             'Command will be ignored.')
+            self.log.warning('No asset name provided for upload!\nCorrect '
+                    'that!\nCommand will be ignored.')
             return -1
 
-        self.log.info('Upload to AWG M8195A will be skipped, since connected '
-                      'directly and not via an ftp pc.')
+        # at first delete all the name, which might lead to confusions in the
+        # upload procedure:
+        self.delete_asset(asset_name)
+
+        # create list of filenames to be uploaded
+        upload_names = []
+        filelist = os.listdir(self.host_waveform_dir)
+        for filename in filelist:
+
+            is_wfm = filename.endswith('.bin8')
+
+            if is_wfm and (asset_name + '_ch') in filename:
+                upload_names.append(filename)
+
+        # upload files
+        for name in upload_names:
+            self._send_file(name)
         return 0
+
 
     def load_asset(self, asset_name, load_dict=None):
         """ Loads a sequence or waveform to the specified channel of the pulsing
@@ -410,64 +468,82 @@ class AWGM8195A(Base, PulserInterface):
         if load_dict is None:
             load_dict = {}
 
-
-
         # # set the waveform directory:
         # self.tell(':MMEM:CDIR {0}'.format(r"C:\Users\Name\Documents"))
         #
         # # Get the waveform directory:
         # dir = self.ask(':MMEM:CDIR?')
 
-        path = self.ftp_root_dir
+        path = self.ftp_root_dir + self.asset_dir
 
         # Find all files associated with the specified asset name
         file_list = self._get_filenames_on_device()
         filename = []
 
+        self.clear_all()
+
         # Be careful which asset_name to specify as the current_loaded_asset
         # because a loaded sequence contains also individual waveforms, which
         # should not be used as the current asset!!
 
-        segment = 1
-        offset = 0
+        segment = 1     # the id in the external memory
+        form = 'BIN8'   # the file format used
+        data_type = 'IONLY'
+        marker_flag = 'OFF'
+        mem_mode = 'ALEN'   # specify how the samples are allocated in memory
+
         for file in file_list:
+
             if file == asset_name+'_ch1.bin8':
                 filepath = os.path.join(path, asset_name + '_ch1.bin8')
-                self.tell(':TRAC1:IMP {0},{1},{2}'.format(segment, offset,
-                                                            filepath))
-                # if the asset is not a sequence file, then it must be a wfm
-                # file and either both or one of the channels should contain
-                # the asset name:
+                self.log.info(filepath)
+                self.tell(':TRAC1:IMP {0}, "{1}", {2}, {3}, {4}, {5}'
+                          ''.format(segment,
+                                    filepath,
+                                    form,
+                                    data_type,
+                                    marker_flag,
+                                    mem_mode))
                 self.current_loaded_asset = asset_name
                 filename.append(file)
 
             elif file == asset_name+'_ch2.bin8':
                 filepath = os.path.join(path, asset_name + '_ch2.bin8')
-                self.tell(':TRAC2:IMP {0},{1},{2}'.format(segment, offset,
-                                                            filepath))
-                # if the asset is not a sequence file, then it must be a wfm
-                # file and either both or one of the channels should contain
-                # the asset name:
+                self.log.info(filepath)
+                self.tell(':TRAC2:IMP {0}, "{1}", {2}, {3}, {4}, {5}'
+                          ''.format(segment,
+                                    filepath,
+                                    form,
+                                    data_type,
+                                    marker_flag,
+                                    mem_mode))
+
                 self.current_loaded_asset = asset_name
                 filename.append(file)
 
             elif file == asset_name+'_ch3.bin8':
                 filepath = os.path.join(path, asset_name + '_ch3.bin8')
-                self.tell(':TRAC3:IMP {0},{1},{2}'.format(segment, offset,
-                                                            filepath))
-                # if the asset is not a sequence file, then it must be a wfm
-                # file and either both or one of the channels should contain
-                # the asset name:
+                self.log.info(filepath)
+                self.tell(':TRAC3:IMP {0}, "{1}", {2}, {3}, {4}, {5}'
+                          ''.format(segment,
+                                    filepath,
+                                    form,
+                                    data_type,
+                                    marker_flag,
+                                    mem_mode))
                 self.current_loaded_asset = asset_name
                 filename.append(file)
 
             elif file == asset_name+'_ch4.bin8':
                 filepath = os.path.join(path, asset_name + '_ch4.bin8')
-                self.tell(':TRAC4:IMP {0},{1},{2}'.format(segment, offset,
-                                                            filepath))
-                # if the asset is not a sequence file, then it must be a wfm
-                # file and either both or one of the channels should contain
-                # the asset name:
+                self.log.info(filepath)
+                self.tell(':TRAC4:IMP {0}, "{1}", {2}, {3}, {4}, {5}'
+                          ''.format(segment,
+                                    filepath,
+                                    form,
+                                    data_type,
+                                    marker_flag,
+                                    mem_mode))
                 self.current_loaded_asset = asset_name
                 filename.append(file)
 
@@ -479,15 +555,193 @@ class AWGM8195A(Base, PulserInterface):
             file_name = str(load_dict[channel_num]) + '_ch{0}.bin8'.format(int(channel_num))
             filepath = os.path.join(path, file_name)
 
-            self.tell(':TRAC{0}:IMP {1},{2},{3}'.format(channel_num,
-                                                          segment,
-                                                          offset,
-                                                          filepath))
+            self.tell(':TRAC{0}:IMP {1}, "{2}", {3}, {4}'.format(channel_num,
+                                                                 segment,
+                                                                 filepath,
+                                                                 form,
+                                                                 mem_mode))
 
         if len(load_dict) > 0:
             self.current_loaded_asset = asset_name
 
         return 0
+
+    # def load_asset(self, asset_name, load_dict=None):
+    #     """ Loads a sequence or waveform to the specified channel of the pulsing
+    #         device.
+    #
+    #     @param str asset_name: The name of the asset to be loaded
+    #
+    #     @param dict load_dict:  a dictionary with keys being one of the
+    #                             available channel numbers and items being the
+    #                             name of the already sampled
+    #                             waveform/sequence files.
+    #                             Examples:   {1: rabi_ch1, 2: rabi_ch2}
+    #                                         {1: rabi_ch2, 2: rabi_ch1}
+    #                             This parameter is optional. If none is given
+    #                             then the channel association is invoked from
+    #                             the sequence generation,
+    #                             i.e. the filename appendix (_ch1, _ch2 etc.)
+    #
+    #     @return int: error code (0:OK, -1:error)
+    #
+    #     Unused for digital pulse generators without sequence storage capability
+    #     (PulseBlaster, FPGA).
+    #     """
+    #
+    #     if load_dict is None:
+    #         load_dict = {}
+    #
+    #     # # set the waveform directory:
+    #     # self.tell(':MMEM:CDIR {0}'.format(r"C:\Users\Name\Documents"))
+    #     #
+    #     # # Get the waveform directory:
+    #     # dir = self.ask(':MMEM:CDIR?')
+    #
+    #     path = self.host_waveform_dir
+    #
+    #     # Find all files associated with the specified asset name
+    #     file_list = self._get_filenames_on_host()
+    #     filename = []
+    #
+    #     # Be careful which asset_name to specify as the current_loaded_asset
+    #     # because a loaded sequence contains also individual waveforms, which
+    #     # should not be used as the current asset!!
+    #
+    #     segment = 1     # the id in the external memory
+    #     init_val = 0    # initial value how samples where allocated on device.
+    #     offset =  0     # the sample offset
+    #
+    #     for file in file_list:
+    #         if file == asset_name+'_ch1.bin8':
+    #             filepath = os.path.join(path, asset_name + '_ch1.bin8')
+    #
+    #             # not entierly sure why *4, maybe it is due to the divider. But
+    #             # this gives the correct size.
+    #             size_waveform = os.path.getsize(filepath) * 4
+    #             self._length_check(size_waveform)
+    #
+    #             # at first delete the files from the segment
+    #             self.tell(':TRAC1:DEL {0}'.format(segment))
+    #             # then define it:
+    #             self.tell(':TRAC1:DEF {0}, {1}, {2}'.format(segment,
+    #                                                        size_waveform,
+    #                                                        init_val))
+    #             with open(filepath, 'rb') as f_obj:
+    #
+    #                 self.tell(':TRAC1:DATA {0},{1},'.format(segment, offset),
+    #                           write_val=True, block=f_obj.read())
+    #
+    #             offset += os.path.getsize(filepath)
+    #             self.current_loaded_asset = asset_name
+    #             filename.append(file)
+    #
+    #         elif file == asset_name+'_ch2.bin8':
+    #             filepath = os.path.join(path, asset_name + '_ch2.bin8')
+    #
+    #             # not entierly sure why *4, maybe it is due to the divider. But
+    #             # this gives the correct size.
+    #             size_waveform = os.path.getsize(filepath) * 4
+    #             self._length_check(size_waveform)
+    #
+    #             # at first delete the files from the segment
+    #             self.tell(':TRAC2:DEL {0}'.format(segment))
+    #             # then define it:
+    #             self.tell(':TRAC2:DEF {0}, {1}, {2}'.format(segment,
+    #                                                         size_waveform,
+    #                                                         init_val))
+    #             with open(filepath, 'rb') as f_obj:
+    #
+    #                 self.tell(':TRAC2:DATA {0},{1},'.format(segment, offset),
+    #                           write_val=True, block=f_obj.read())
+    #             self.current_loaded_asset = asset_name
+    #             filename.append(file)
+    #
+    #         elif file == asset_name+'_ch3.bin8':
+    #             filepath = os.path.join(path, asset_name + '_ch3.bin8')
+    #
+    #             # not entierly sure why *4, maybe it is due to the divider. But
+    #             # this gives the correct size.
+    #             size_waveform = os.path.getsize(filepath) * 4
+    #             self._length_check(size_waveform)
+    #
+    #             # at first delete the files from the segment
+    #             self.tell(':TRAC3:DEL {0}'.format(segment))
+    #             # then define it:
+    #             self.tell(':TRAC3:DEF {0}, {1}, {2}'.format(segment,
+    #                                                         size_waveform,
+    #                                                         init_val))
+    #             with open(filepath, 'rb') as f_obj:
+    #
+    #                 self.tell(':TRAC3:DATA {0},{1},'.format(segment, offset),
+    #                           write_val=True, block=f_obj.read())
+    #             self.current_loaded_asset = asset_name
+    #             filename.append(file)
+    #
+    #         elif file == asset_name+'_ch4.bin8':
+    #             filepath = os.path.join(path, asset_name + '_ch4.bin8')
+    #             # not entierly sure why *4, maybe it is due to the divider. But
+    #             # this gives the correct size.
+    #             size_waveform = os.path.getsize(filepath) * 4
+    #             self._length_check(size_waveform)
+    #
+    #             # at first delete the files from the segment
+    #             self.tell(':TRAC4:DEL {0}'.format(segment))
+    #             # then define it:
+    #             self.tell(':TRAC4:DEF {0}, {1}, {2}'.format(segment,
+    #                                                         size_waveform,
+    #                                                         init_val))
+    #             with open(filepath, 'rb') as f_obj:
+    #
+    #                 self.tell(':TRAC4:DATA {0},{1},'.format(segment, offset),
+    #                           write_val=True, block=f_obj.read())
+    #             self.current_loaded_asset = asset_name
+    #             filename.append(file)
+    #
+    #     if load_dict == {} and filename == []:
+    #         self.log.warning('No file and channel provided for load!\n'
+    #                 'Correct that!\nCommand will be ignored.')
+    #
+    #     for channel_num in list(load_dict):
+    #         file_name = str(load_dict[channel_num]) + '_ch{0}.bin8'.format(int(channel_num))
+    #         filepath = os.path.join(path, file_name)
+    #
+    #         # not entierly sure why *4, maybe it is due to the divider. But
+    #         # this gives the correct size.
+    #         size_waveform = os.path.getsize(filepath) * 4
+    #         self._length_check(size_waveform)
+    #
+    #         # at first delete the files from the segment
+    #         self.tell(':TRAC{0}:DEL {1}'.format(channel_num, segment))
+    #         # then define it:
+    #         self.tell(':TRAC{0}:DEF {1}, {2}, {3}'.format(channel_num,
+    #                                                       segment,
+    #                                                       size_waveform,
+    #                                                       init_val))
+    #         with open(filepath, 'rb') as f_obj:
+    #
+    #             self.tell(':TRAC{0}:DATA {1},{2},'.format(channel_num,
+    #                                                       segment,
+    #                                                       offset),
+    #                       write_val=True, block=f_obj.read())
+    #             self.current_loaded_asset = asset_name
+    #
+    #     if len(load_dict) > 0:
+    #         self.current_loaded_asset = asset_name
+    #
+    #     return 0
+
+    def _length_check(self, size):
+        """ Length check of the sequence to guarente the granularity.
+
+        @param int size:
+        """
+
+        gran = 64
+        if size%gran != 0:
+            self.log.warning('The waveform does not fulfil the granularity of'
+                             '"{}" and there are "{}" samples to much'
+                             ''.format(gran, size%gran))
 
     def get_loaded_asset(self):
         """ Retrieve the currently loaded asset name of the device.
@@ -506,11 +760,8 @@ class AWGM8195A(Base, PulserInterface):
         visual display. Unused for digital pulse generators without sequence
         storage capability (PulseBlaster, FPGA).
         """
-        segment = 1
-        self.tell(':TRAC1:DEL {0}'.format(segment))
-        self.tell(':TRAC2:DEL {0}'.format(segment))
-        self.tell(':TRAC3:DEL {0}'.format(segment))
-        self.tell(':TRAC4:DEL {0}'.format(segment))
+
+        self.tell(':TRAC:DEL:ALL')
         self.current_loaded_asset = ''
         return
 
@@ -573,7 +824,7 @@ class AWGM8195A(Base, PulserInterface):
         retrieve the current sample rate directly from the device.
         """
 
-        self.sample_rate = float(self.ask(':FREQ:RAST?'))
+        self.sample_rate = float(self.ask(':FREQ:RAST?'))/self._sample_rate_div
         return self.sample_rate
 
     def set_sample_rate(self, sample_rate):
@@ -587,8 +838,8 @@ class AWGM8195A(Base, PulserInterface):
               for obtaining the actual set value and use that information for
               further processing.
         """
-
-        self.tell(':FREQ:RAST {0:.4G}GHz\n'.format(sample_rate/1e9))
+        sample_rate_GHz = (sample_rate * self._sample_rate_div)/1e9
+        self.tell(':FREQ:RAST {0:.4G}GHz\n'.format(sample_rate_GHz))
         time.sleep(0.2)
         return self.get_sample_rate()
 
@@ -880,17 +1131,20 @@ class AWGM8195A(Base, PulserInterface):
         if ch is None:
             ch = {}
 
-        for channel in ch:
-            if 'a_ch' in channel:
-                ana_chan = int(channel[4:])
-
-                # int(True) = 1, int(False) = 0:
-                self.tell(':OUTP{0} {1}'.format(ana_chan, int(ch[channel])))
-
-            if 'd_ch' in channel:
-                self.log.info('Digital Channel "{0}" is not implemented in the '
-                              'AWG M8195A series! Command skipped.'
-                              ''.format(ch[channel]))
+        #FIXME: this method seems not to be sensible for this device. Check
+        #       whether doing nothing is the right way to do here.
+        #
+        # for channel in ch:
+        #     if 'a_ch' in channel:
+        #         ana_chan = int(channel[4:])
+        #
+        #         # int(True) = 1, int(False) = 0:
+        #         self.tell(':OUTP{0} {1}'.format(ana_chan, int(ch[channel])))
+        #
+        #     if 'd_ch' in channel:
+        #         self.log.info('Digital Channel "{0}" is not implemented in the '
+        #                       'AWG M8195A series! Command skipped.'
+        #                       ''.format(ch[channel]))
 
         return self.get_active_channels(ch=list(ch))
 
@@ -957,12 +1211,10 @@ class AWGM8195A(Base, PulserInterface):
                 if fnmatch(filename, name+'_ch?.bin8'):
                     files_to_delete.append(filename)
 
-        #FIXME: the files are not actually deleted!!!
-        self.log.error('"delete_asset" not fully implemented!')
 
         # clear the AWG if the deleted asset is the currently loaded asset
-        # if self.current_loaded_asset == asset_name:
-        #     self.clear_all()
+        if self.current_loaded_asset == asset_name:
+            self.clear_all()
         return files_to_delete
 
     def set_asset_dir_on_device(self, dir_path):
@@ -1026,19 +1278,19 @@ class AWGM8195A(Base, PulserInterface):
                         'Method call will be ignored.')
         return self.get_interleave()
 
-    def tell(self, command, wait=True, write_val=False, check_err=True):
+    def tell(self, command, wait=True, write_val=False, block=None, check_err=True):
         """Send a command string to the AWG.
 
         @param command: string containing the command
         @param bool wait: optional, is the wait statement should be skipped.
-        @param bool write_val: indicate whether binary values are following
         @param bool check_err: Perform an error check after each tell
 
         @return: str: the statuscode of the write command.
         """
 
         if write_val:
-            statuscode = self._awg.write_values(command)
+            statuscode = self._awg.write_values(command, block)
+            # statuscode =  self._awg.write_binary_values(command, block)
         else:
             statuscode = self._awg.write(command)
 
@@ -1128,7 +1380,7 @@ class AWGM8195A(Base, PulserInterface):
 
         @return: list, The full filenames of all assets saved on the host PC.
         """
-        filename_list = [f for f in os.listdir(self.host_waveform_directory) if f.endswith('.bin8')]
+        filename_list = [f for f in os.listdir(self.host_waveform_dir) if f.endswith('.bin8')]
         return filename_list
 
     def _get_filenames_on_device(self):
@@ -1136,10 +1388,36 @@ class AWGM8195A(Base, PulserInterface):
 
         @return: list, The full filenames of all assets saved on the device.
         """
+        filename_list = []
+        with FTP(self.ip_address) as ftp:
+            ftp.login(user=self.user, passwd=self.passwd) # login as default user anonymous, passwd anonymous@
+            ftp.cwd(self.asset_dir)
+            # get only the files from the dir and skip possible directories
+            log =[]
+            file_list = []
+            ftp.retrlines('LIST', callback=log.append)
+            for line in log:
+                if '<DIR>' not in line:
+                    # that is how a potential line is looking like:
+                    #   '05-10-16  05:22PM                  292 SSR aom adjusted.seq'
+                    # One can see that the first part consists of the date
+                    # information. Remove those information and separate then
+                    # the first number, which indicates the size of the file,
+                    # from the following. That is necessary if the filename has
+                    # whitespaces in the name:
+                    size_filename = line[18:].lstrip()
 
-        # assume AWG is directly connected via USB so files on host = files on
-        # device
-        return self._get_filenames_on_host()
+                    # split after the first appearing whitespace and take the
+                    # rest as filename, remove for safety all trailing
+                    # whitespaces:
+                    actual_filename = size_filename.split(' ', 1)[1].lstrip()
+                    file_list.append(actual_filename)
+            for filename in file_list:
+                if filename.endswith(('.wfm', '.wfmx', '.mat', '.seq', '.seqx',
+                                      '.bin8')):
+                    if filename not in filename_list:
+                        filename_list.append(filename)
+        return filename_list
 
 
     def direct_upload(self, channel, asset_name_p):
@@ -1153,6 +1431,15 @@ class AWGM8195A(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+
+        # k.tell(':TRAC1:DEF 1, 26624,0')
+        # Out[31]: (23, < StatusCode.success: 0 >)
+        #
+        # f = open(path, 'rb')
+        #
+        # os.path.getsize(path)
+        #
+        # k._awg.write_binary_values(':TRAC1:DATA 1,0,', f.read())
 
 
         #FIXME: that is not fixed yet
@@ -1174,6 +1461,7 @@ class AWGM8195A(Base, PulserInterface):
                     write_val=True)
 
         return 0
+
 
 """
 Discussion about sampling the waveform for the AWG. This text will move 
