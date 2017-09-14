@@ -617,6 +617,8 @@ class SamplesWriteMethods():
 
         for channel_index, channel_number in enumerate(ana_chnl_numbers):
 
+            self.log.info('Max ampl, ch={0}: {1}'.format(channel_index, analog_samples[channel_index].max()))
+
             # make the filename and filepath right
             filename = name + '_ch' + str(channel_number) + '.bin8'
             created_files.append(filename)
@@ -628,11 +630,13 @@ class SamplesWriteMethods():
                 # all additional numbers away.
                 wfm_file.write((((analog_samples[channel_index]+max_ampl)*255)-128).astype('int8'))
 
-                # check for granularity of 256 samples and add zeros if needed.
-                if is_last_chunk and (total_number_of_samples%256 != 0):
-                    num_to_append = 256 - total_number_of_samples%256
-                    wfm_file.write(np.zeros(num_to_append, dtype=np.int8))
-
+                # check for granularity of 64 samples and add zeros if needed.
+                # since only 4 channel usage is implemented, the sample rate
+                # divider will always be 4.
+                if is_last_chunk and (total_number_of_samples % 64 != 0):
+                    num_to_append = 64 - total_number_of_samples % 64
+                    last_samp = (((analog_samples[channel_index][-1]+max_ampl)*255)-128).astype('int8')
+                    wfm_file.write(np.full(num_to_append, last_samp, dtype=np.int8))
 
         return created_files
 
