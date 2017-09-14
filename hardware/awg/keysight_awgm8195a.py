@@ -68,7 +68,7 @@ class AWGM8195A(Base, PulserInterface):
 
         # AWG5002C has possibility for sequence output, but it was not tested
         # yet. Therefore set it to False. If it is implemented, set it to True!
-        self.sequence_mode = False
+        self._SEQUENCE_MODE = False
         self.current_loaded_asset = ''
         self.asset_dir = '\\waves'
 
@@ -1227,9 +1227,19 @@ class AWGM8195A(Base, PulserInterface):
         Unused for digital pulse generators without changeable file structure
         (PulseBlaster, FPGA).
         """
-        #FIXME: implement that!
 
-        self.log.error('"set_asset_dir_on_device" not fully implemented!')
+        # check whether the desired directory exists:
+        with FTP(self.ip_address) as ftp:
+            # login as specified user
+            ftp.login(user=self.user, passwd=self.passwd)
+            try:
+                ftp.cwd(dir_path)
+            except:
+                self.log.info('Desired directory {0} not found on AWG '
+                              'device.\n'
+                              'Create new.'.format(dir_path))
+                ftp.mkd(dir_path)
+        self.asset_dir = dir_path
 
         return 0
 
@@ -1242,10 +1252,7 @@ class AWGM8195A(Base, PulserInterface):
         (PulseBlaster, FPGA).
         """
 
-        #FIXME: implement that!
-        self.log.error('"get_asset_dir_on_device" not fully implemented!')
-
-        return ''
+        return self.asset_directory
 
     def get_interleave(self):
         """ Check whether Interleave is on in AWG.
@@ -1274,8 +1281,8 @@ class AWGM8195A(Base, PulserInterface):
         compability reasons.
         """
         self.log.warning('Interleave mode not available for the AWG M8195A '
-                        'Series!\n'
-                        'Method call will be ignored.')
+                         'Series!\n'
+                         'Method call will be ignored.')
         return self.get_interleave()
 
     def tell(self, command, wait=True, write_val=False, block=None, check_err=True):
@@ -1327,7 +1334,7 @@ class AWGM8195A(Base, PulserInterface):
 
         @return: bool, True for yes, False for no.
         """
-        return self.sequence_mode
+        return self._SEQUENCE_MODE
 
 
 ################################################################################
