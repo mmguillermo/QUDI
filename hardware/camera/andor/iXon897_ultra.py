@@ -150,7 +150,7 @@ class IxonUltra(Base, CameraInterface):
         self._set_read_mode(self._read_mode)
         self._set_trigger_mode(self._trigger_mode)
         self._set_exposuretime(self._exposure)
-        self._set_trigger_mode('INTERNAL')
+        self._set_acquisition_mode(self._acquisition_mode)
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -327,6 +327,18 @@ class IxonUltra(Base, CameraInterface):
         else:
             return False
 
+# soon to be interface functions regarding for using
+# a camera as a part of a (slow) photon counter
+    def set_up_counter(self, channels, deadtime):
+        if self._shutter == 'closed':
+            msg = self._set_shutter(0, 1, 0.1, 0.1)
+            if msg == 'DRV_SUCCESS':
+                self._shutter = 'open'
+            else:
+                self.log.error('Problems with the shutter.')
+        self._set_trigger_mode('EXTERNAL')
+        self._set_acquistion_mode('RUN_TILL_ABORT')
+
 # non interface functions regarding camera interface
     def _abort_acquisition(self):
         error = self.dll.AbortAcquisition()
@@ -437,6 +449,21 @@ class IxonUltra(Base, CameraInterface):
         @param c_int index: 0 - (Number of Preamp gains - 1)
         """
         error = self.dll.SetPreAmpGain(index)
+        return ERROR_CODE[error]
+
+    def _set_acquisition_mode(self, mode):
+        """
+        Function to set the acquisition mode
+        @param mode:
+        @return:
+        """
+
+        if hasattr(AcquisitionMode, mode):
+            n_mode = c_int(getattr(AcquisitionMode, mode).value)
+            error = self.dll.SetAcquisitionMode(n_mode)
+        else:
+            self.log.warning('{0} mode is not supported'.format(mode))
+            return -1
         return ERROR_CODE[error]
 
 # getter functions
