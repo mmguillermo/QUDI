@@ -34,7 +34,7 @@ class NationalInstrumentsClockedTrigger(Base):
     For the moment no interface is defined for this module.
     """
 
-    _modtype = 'NICard'
+    _modtype = 'NationalInstrumentsClockedTrigger'
     _modclass = 'hardware'
 
     _clock_channel = ConfigOption('clock_channel', missing='error')
@@ -174,7 +174,6 @@ class NationalInstrumentsClockedTrigger(Base):
         @return int: error code (0:OK, -1:error)
         """
         # this task will give out triggers
-        self.set_up_odmr_clock(clock_frequency=clock_frequency, clock_channel=clock_channel)
         try:
             # start and stop pulse task to correctly initiate idle state high voltage.
             # daq.DAQmxStartTask(self._clock_daq_task)
@@ -218,7 +217,7 @@ class NationalInstrumentsClockedTrigger(Base):
             return -1
         return 0
 
-    def close_odmr(self):
+    def close_connection(self):
         """ Closes the odmr and cleans up afterwards.
 
         @return int: error code (0:OK, -1:error)
@@ -227,26 +226,13 @@ class NationalInstrumentsClockedTrigger(Base):
         try:
             # disconnect the trigger channel
             daq.DAQmxDisconnectTerms(
-                self._scanner_clock_channel + 'InternalOutput',
+                self._clock_channel + 'InternalOutput',
                 self._odmr_trigger_channel)
 
         except:
             self.log.exception('Error while disconnecting ODMR clock channel.')
             retval = -1
 
-        if len(self._scanner_ai_channels) > 0:
-            try:
-                # stop the counter task
-                daq.DAQmxStopTask(self._scanner_analog_daq_task)
-                # after stopping delete all the configuration of the counter
-                daq.DAQmxClearTask(self._scanner_analog_daq_task)
-                # set the task handle to None as a safety
-                self._scanner_analog_daq_task = None
-            except:
-                self.log.exception('Could not close analog.')
-                retval = -1
-
-        retval = -1 if self.close_counter(scanner=True) < 0 or retval < 0 else 0
         return retval
 
 
@@ -281,5 +267,40 @@ class NationalInstrumentsClockedTrigger(Base):
                 self.log.exception('Could not reset NI device {0}'.format(device))
                 retval = -1
         return retval
+
+    # adding manual switch to test the setup
+    def digital_channel_switch(self, channel_name, mode=True):
+        """
+        Switches on or off the voltage output (5V) of one of the digital channels, that
+        can as an example be used to switch on or off the AOM driver or apply a single
+        trigger for ODMR.
+        @param str channel_name: Name of the channel which should be controlled
+                                    for example ('/Dev1/PFI9')
+        @param bool mode: specifies if the voltage output of the chosen channel should be turned on or off
+
+        @return int: error code (0:OK, -1:error)
+        """
+        if channel_name == None:
+            self.log.error('No channel for digital output specified')
+            return -1
+        else:
+
+            self.digital_out_task = daq.TaskHandle()
+            if mode:
+                self.digital_data = daq.c_uint32(0xffffffff)
+            else:
+                self.digital_data = daq.c_uint32(0x0)
+            self.digital_read = daq.c_int32()
+            self.digital_samples_channel = daq.c_int32(1)
+            daq.DAQmxCreateTask('DigitalOut', daq.byref(self.digital_out_task))
+            daq.DAQmxCreateDOChan(self.digital_out_task, channel_name, "", daq.DAQmx_Val_ChanForAllLines)
+            daq.DAQmxStartTask(self.digital_out_task)
+            daq.DAQmxWriteDigitalU32(self.digital_out_task, self.digital_samples_channel, True,
+                                        self._RWTimeout, daq.DAQmx_Val_GroupByChannel,
+                                        np.array(self.digital_data), self.digital_read, None);
+
+            daq.DAQmxStopTask(self.digital_out_task)
+            daq.DAQmxClearTask(self.digital_out_task)
+            return 0
 
 
