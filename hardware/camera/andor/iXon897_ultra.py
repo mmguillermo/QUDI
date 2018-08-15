@@ -56,7 +56,7 @@ class TriggerMode(Enum):
     SOFTWARE_TRIGGER = 10
     EXTERNAL_CHARGE_SHIFTING = 12
 
-ERROR_CODE = {
+ERROR_DICT = {
     20001: "DRV_ERROR_CODES",
     20002: "DRV_SUCCESS",
     20003: "DRV_VXNOTINSTALLED",
@@ -238,29 +238,42 @@ class IxonUltra(Base, CameraInterface):
 
         if self._read_mode == 'IMAGE':
             if self._acquisition_mode == 'SINGLE_SCAN':
-                dim = width * height / self._hbin / self._vbin
+                dim = width * height
             elif self._acquisition_mode == 'KINETICS':
-                dim = width * height / self._hbin / self._vbin * self._scans
+                dim = width * height * self._scans
+            elif self._acquisition_mode == 'RUN_TILL_ABORT':
+                dim = width * height
+            else:
+                self.log.error('Your acquisition mode is not covered currently')
         elif self._read_mode == 'SINGLE_TRACK' or self._read_mode == 'FVB':
             if self._acquisition_mode == 'SINGLE_SCAN':
                 dim = width
             elif self._acquisition_mode == 'KINETICS':
                 dim = width * self._scans
+        else:
+            self.log.error('Your acquisition mode is not covered currently')
 
         dim = int(dim)
         image_array = np.zeros(dim)
         cimage_array = c_int * dim
         cimage = cimage_array()
-        error = self.dll.GetAcquiredData(pointer(cimage), dim)
-        if ERROR_CODE[error] != 'DRV_SUCCESS':
-            self.log.warning('Couldn\'t retrieve an image')
+
+        # this will be a bit hacky
+        if self._acquisition_mode == 'RUN_TILL_ABORT':
+            error_code = self.dll.GetOldestImage(pointer(cimage), dim)
+        else:
+            error_code = self.dll.GetAcquiredData(pointer(cimage), dim)
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('Couldn\'t retrieve an image. {0}'.format(ERROR_DICT[error_code]))
         else:
             self.log.debug('image length {0}'.format(len(cimage)))
             for i in range(len(cimage)):
                 # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
                 image_array[i] = cimage[i]
 
-        image_array = np.reshape(image_array, (int(self._width/self._hbin), int(self._height/self._vbin)))
+        image_array = np.reshape(image_array, (self._width, self._height))
+
+        self._cur_image = image_array
         return image_array
 
     def set_exposure(self, exposure):
@@ -322,36 +335,78 @@ class IxonUltra(Base, CameraInterface):
         """
         status = c_int()
         self._get_status(status)
-        if ERROR_CODE[status.value] == 'DRV_IDLE':
+        if ERROR_DICT[status.value] == 'DRV_IDLE':
             return True
         else:
             return False
 
-# soon to be interface functions regarding for using
+# soon to be interface functions for using
 # a camera as a part of a (slow) photon counter
-    def set_up_counter(self, channels, deadtime):
+    def set_up_counter(self):
+        check_val = 0
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
                 self._shutter = 'open'
             else:
                 self.log.error('Problems with the shutter.')
-        self._set_trigger_mode('EXTERNAL')
-        self._set_acquistion_mode('RUN_TILL_ABORT')
+                check_val = -1
+        ret_val1 = self._set_trigger_mode('EXTERNAL')
+        ret_val2 = self._set_acquisition_mode('RUN_TILL_ABORT')
+        error_code = self.dll.PrepareAcquisition()
+        error_msg = ERROR_DICT[error_code]
+        if error_msg == 'DRV_SUCCESS':
+            self.log.debug('prepared acquisition')
+        else:
+            self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
+        msg = self._start_acquisition()
+        if check_val == 0:
+            check_val = ret_val1 | ret_val2
+
+        if msg != 'DRV_SUCCESS':
+            ret_val3 = -1
+        else:
+            ret_val3 = 0
+
+        check_val = ret_val3 | check_val
+
+        return check_val
+
+    def count_odmr(self, length):
+        first, last = self._get_number_new_images()
+        self.log.debug('number new images:{0}'.format((first,last)))
+        while last-first + 1 < length:
+            first, last = self._get_number_new_images()
+
+        images = []
+        for i in range(first, last + 1):
+            img = self._get_images(i, i, 1)
+            images.append(img)
+        self.log.debug('expected number of images:{0}'.format(length))
+        self.log.debug('number of images acquired:{0}'.format(len(images)))
+        return np.array(images).transpose()
+
+    def get_down_time(self):
+        return self._exposure
+
+    def get_counter_channels(self):
+        width, height = self.get_size()
+        num_px = width * height
+        return [i for i in map(lambda x: 'px {0}'.format(x), range(num_px))]
 
 # non interface functions regarding camera interface
     def _abort_acquisition(self):
-        error = self.dll.AbortAcquisition()
-        return ERROR_CODE[error]
+        error_code = self.dll.AbortAcquisition()
+        return ERROR_DICT[error_code]
 
     def _shut_down(self):
-        error = self.dll.ShutDown()
-        return ERROR_CODE[error]
+        error_code = self.dll.ShutDown()
+        return ERROR_DICT[error_code]
 
     def _start_acquisition(self):
-        error = self.dll.StartAcquisition()
+        error_code = self.dll.StartAcquisition()
         self.dll.WaitForAcquisition()
-        return ERROR_CODE[error]
+        return ERROR_DICT[error_code]
 
 # setter functions
 
@@ -366,48 +421,61 @@ class IxonUltra(Base, CameraInterface):
                           5 Open for any series
         """
         typ, mode, closingtime, openingtime = c_int(typ), c_int(mode), c_float(closingtime), c_float(openingtime)
-        error = self.dll.SetShutter(typ, mode, closingtime, openingtime)
+        error_code = self.dll.SetShutter(typ, mode, closingtime, openingtime)
 
-        return ERROR_CODE[error]
+        return ERROR_DICT[error_code]
 
     def _set_exposuretime(self, time):
         """
         @param float time: exposure duration
         @return string answer from the camera
         """
-        error = self.dll.SetExposureTime(c_float(time))
-        return ERROR_CODE[error]
+        error_code = self.dll.SetExposureTime(c_float(time))
+        return ERROR_DICT[error_code]
 
     def _set_read_mode(self, mode):
         """
         @param string mode: string corresponding to certain ReadMode
         @return string answer from the camera
         """
+        check_val = 0
+
         if hasattr(ReadMode, mode):
             n_mode = getattr(ReadMode, mode).value
             n_mode = c_int(n_mode)
-            error = self.dll.SetReadMode(n_mode)
+            error_code = self.dll.SetReadMode(n_mode)
             if mode == 'IMAGE':
                 self.log.debug("widt:{0}, height:{1}".format(self._width, self._height))
                 msg = self._set_image(1, 1, 1, self._width, 1, self._height)
                 if msg != 'DRV_SUCCESS':
-                    self.log.warning('{0}'.format(ERROR_CODE[msg]))
-        if ERROR_CODE[error] == 'DRV_SUCCESS':
+                    self.log.warning('{0}'.format(ERROR_DICT[error_code]))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('Readmode was not set: {0}'.format(ERROR_DICT[error_code]))
+            check_val = -1
+        else:
             self._read_mode = mode
-        return ERROR_CODE[error]
+
+        return check_val
 
     def _set_trigger_mode(self, mode):
         """
         @param string mode: string corresponding to certain TriggerMode
         @return string: answer from the camera
         """
+        check_val = 0
         if hasattr(TriggerMode, mode):
             n_mode = c_int(getattr(TriggerMode, mode).value)
-            error = self.dll.SetTriggerMode(n_mode)
+            self.log.debug('Input to function: {0}'.format(n_mode))
+            error_code = self.dll.SetTriggerMode(n_mode)
         else:
             self.log.warning('{0} mode is not supported'.format(mode))
-            return -1
-        return ERROR_CODE[error]
+            check_val = -1
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            check_val = -1
+        else:
+            self._trigger_mode = mode
+
+        return check_val
 
     def _set_image(self, hbin, vbin, hstart, hend, vstart, vend):
         """
@@ -424,8 +492,8 @@ class IxonUltra(Base, CameraInterface):
         hbin, vbin, hstart, hend, vstart, vend = c_int(hbin), c_int(vbin),\
                                                  c_int(hstart), c_int(hend), c_int(vstart), c_int(vend)
 
-        error = self.dll.SetImage(hbin, vbin, hstart, hend, vstart, vend)
-        msg = ERROR_CODE[error]
+        error_code = self.dll.SetImage(hbin, vbin, hstart, hend, vstart, vend)
+        msg = ERROR_DICT[error_code]
         if msg == 'DRV_SUCCESS':
             self._hbin = hbin.value
             self._vbin = vbin.value
@@ -433,23 +501,24 @@ class IxonUltra(Base, CameraInterface):
             self._hend = hend.value
             self._vstart = vstart.value
             self._vend = vend.value
-
-        return ERROR_CODE[error]
+        self._width = int((self._hend - self._hstart + 1) / self._hbin)
+        self._height = int((self._vend - self._vstart + 1) / self._vbin)
+        return ERROR_DICT[error_code]
 
     def _set_output_amplifier(self, typ):
         """
         @param c_int typ: 0: EMCCD gain, 1: Conventional CCD register
         @return string: error code
         """
-        error = self.dll.SetOutputAmplifier(typ)
-        return ERROR_CODE[error]
+        error_code = self.dll.SetOutputAmplifier(typ)
+        return ERROR_DICT[error_code]
 
     def _set_preamp_gain(self, index):
         """
         @param c_int index: 0 - (Number of Preamp gains - 1)
         """
-        error = self.dll.SetPreAmpGain(index)
-        return ERROR_CODE[error]
+        error_code = self.dll.SetPreAmpGain(index)
+        return ERROR_DICT[error_code]
 
     def _set_acquisition_mode(self, mode):
         """
@@ -457,43 +526,48 @@ class IxonUltra(Base, CameraInterface):
         @param mode:
         @return:
         """
-
+        check_val = 0
         if hasattr(AcquisitionMode, mode):
             n_mode = c_int(getattr(AcquisitionMode, mode).value)
-            error = self.dll.SetAcquisitionMode(n_mode)
+            error_code = self.dll.SetAcquisitionMode(n_mode)
         else:
             self.log.warning('{0} mode is not supported'.format(mode))
-            return -1
-        return ERROR_CODE[error]
+            check_val = -1
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            check_val = -1
+        else:
+            self._acquisition_mode = mode
+
+        return check_val
 
 # getter functions
     def _get_status(self, status):
-        error = self.dll.GetStatus(byref(status))
-        return ERROR_CODE[error]
+        error_code = self.dll.GetStatus(byref(status))
+        return ERROR_DICT[error_code]
 
     def _get_detector(self, nx_px, ny_px):
-        error = self.dll.GetDetector(byref(nx_px), byref(ny_px))
-        return ERROR_CODE[error]
+        error_code = self.dll.GetDetector(byref(nx_px), byref(ny_px))
+        return ERROR_DICT[error_code]
 
     def _get_camera_serialnumber(self, number):
         """
         Gives serial number
         Parameters
         """
-        error = self.dll.GetCameraSerialNumber(byref(number))
-        return ERROR_CODE[error]
+        error_code = self.dll.GetCameraSerialNumber(byref(number))
+        return ERROR_DICT[error_code]
 
     def _get_acquisition_timings(self):
         exposure = c_float()
         accumulate = c_float()
         kinetic = c_float()
-        error = self.dll.GetAcquisitionTimings(byref(exposure),
+        error_code = self.dll.GetAcquisitionTimings(byref(exposure),
                                                byref(accumulate),
                                                byref(kinetic))
         self._exposure = exposure.value
         self._accumulate = accumulate.value
         self._kinetic = kinetic.value
-        return ERROR_CODE[error]
+        return ERROR_DICT[error_code]
 
     def _get_oldest_image(self):
         """ Return an array of last acquired image.
@@ -521,8 +595,8 @@ class IxonUltra(Base, CameraInterface):
         image_array = np.zeros(dim)
         cimage_array = c_int * dim
         cimage = cimage_array()
-        error = self.dll.GetOldestImage(pointer(cimage), dim)
-        if ERROR_CODE[error] != 'DRV_SUCCESS':
+        error_code = self.dll.GetOldestImage(pointer(cimage), dim)
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             self.log.warning('Couldn\'t retrieve an image')
         else:
             self.log.debug('image length {0}'.format(len(cimage)))
@@ -560,4 +634,62 @@ class IxonUltra(Base, CameraInterface):
         gain = c_float()
         self.dll.GetPreAmpGain(index, byref(gain))
         return index.value, gain.value
+
+    def _get_size_of_circular_ring_buffer(self):
+        index = c_long()
+        error_code = self.dll.GetSizeOfCircularBuffer(byref(index))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('Can not retrieve size of circular ring buffer: {0}'.format(ERROR_DICT[error_code]))
+        return index.value
+
+    def _get_number_new_images(self):
+        first = c_long()
+        last = c_long()
+        error_code = self.dll.GetNumberNewImages(byref(first), byref(last))
+        msg = ERROR_DICT[error_code]
+        pass_returns = ['DRV_SUCCESS', 'DRV_NO_NEW_DATA']
+        if msg not in pass_returns:
+            self.log.error('Can not retrieve number of new images {0}'.format(ERROR_DICT[error_code]))
+
+        return first.value, last.value
+
+    # not working properly (only for n_scans = 1)
+    def _get_images(self, first_img, last_img, n_scans):
+        """ Return an array of last acquired image.
+
+        @return numpy array: image data in format [[row],[row]...]
+
+        Each pixel might be a float, integer or sub pixels
+        """
+
+        width = self._width
+        height = self._height
+
+        # first_img, last_img = self._get_number_new_images()
+        # n_scans = last_img - first_img
+        dim = width * height * n_scans
+
+        dim = int(dim)
+        image_array = np.zeros(dim)
+        cimage_array = c_int * dim
+        cimage = cimage_array()
+
+        first_img = c_long(first_img)
+        last_img = c_long(last_img)
+        size = c_ulong(width * height)
+        val_first = c_long()
+        val_last = c_long()
+        error_code = self.dll.GetImages(first_img, last_img, pointer(cimage),
+                                        size, byref(val_first), byref(val_last))
+        self.log.debug('what_ever these mean: {0}, {1}'.format(val_first, val_last))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('Couldn\'t retrieve an image. {0}'.format(ERROR_DICT[error_code]))
+        else:
+            self.log.debug('image length {0}'.format(len(cimage)))
+            for i in range(len(cimage)):
+                # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
+                image_array[i] = cimage[i]
+
+        self._cur_image = image_array
+        return image_array
 # non interface functions regarding setpoint interface
