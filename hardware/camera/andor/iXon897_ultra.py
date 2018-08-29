@@ -200,6 +200,8 @@ class IxonUltra(Base, CameraInterface):
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
                 self._shutter = 'open'
+            else:
+                self.log.error('shutter did not open.{0}'.format(msg))
 
         if self._live:
             return -1
@@ -520,6 +522,11 @@ class IxonUltra(Base, CameraInterface):
         error_code = self.dll.SetPreAmpGain(index)
         return ERROR_DICT[error_code]
 
+    def _set_temperature(self, temp):
+        temp = c_int(temp)
+        error_code = self.dll.SetTemperature(temp)
+        return  ERROR_DICT[error_code]
+
     def _set_acquisition_mode(self, mode):
         """
         Function to set the acquisition mode
@@ -539,6 +546,14 @@ class IxonUltra(Base, CameraInterface):
             self._acquisition_mode = mode
 
         return check_val
+
+    def _set_cooler(self, state):
+        if state:
+            error_code = self.dll.CoolerON()
+        else:
+            error_code = self.dll.CoolerOFF()
+
+        return ERROR_DICT[error_code]
 
 # getter functions
     def _get_status(self, status):
@@ -635,11 +650,29 @@ class IxonUltra(Base, CameraInterface):
         self.dll.GetPreAmpGain(index, byref(gain))
         return index.value, gain.value
 
+    def _get_temperature(self):
+        temp = c_int()
+        error_code = self.dll.GetTemperature(byref(temp))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('Can not retrieve temperature'.format(ERROR_DICT[error_code]))
+        return temp.value
+
+    def _get_temperature_f(self):
+        """
+        Status of the cooling process + current temperature
+        @return: (float, str) containing current temperature and state of the cooling process
+        """
+        temp = c_float()
+        error_code = self.dll.GetTemperatureF(byref(temp))
+
+        return temp.value, ERROR_DICT[error_code]
+
     def _get_size_of_circular_ring_buffer(self):
         index = c_long()
         error_code = self.dll.GetSizeOfCircularBuffer(byref(index))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            self.log.error('Can not retrieve size of circular ring buffer: {0}'.format(ERROR_DICT[error_code]))
+            self.log.error('Can not retrieve size of circular ring '
+                           'buffer: {0}'.format(ERROR_DICT[error_code]))
         return index.value
 
     def _get_number_new_images(self):
