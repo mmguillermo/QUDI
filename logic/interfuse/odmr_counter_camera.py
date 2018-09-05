@@ -26,6 +26,7 @@ from core.module import Connector
 from logic.generic_logic import GenericLogic
 from interface.odmr_counter_interface import ODMRCounterInterface
 from core.module import Connector
+import time
 
 class ODMRCounterCamera(GenericLogic, ODMRCounterInterface):
     """
@@ -122,12 +123,7 @@ class ODMRCounterCamera(GenericLogic, ODMRCounterInterface):
         @return float[]: the photon counts per second
         """
         # TODO: Figure out if clock needs to be stopped here or not.
-        self.log.debug('in count odmr')
         data = self._counting_device.count_odmr(length)
-        self.log.debug('data acquired')
-        #self._ctrigger_device.set_up_odmr_clock(clock_frequency=self._ctrigger_device._clock_frequency)
-        #self._ctrigger_device.set_up_trigger()
-        #self.log.debug('trigger + clock started again')
         return data
 
     def close_odmr(self):
