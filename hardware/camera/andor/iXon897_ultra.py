@@ -361,6 +361,7 @@ class IxonUltra(Base, CameraInterface):
             self.log.debug('prepared acquisition')
         else:
             self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
+        self._get_acquisition_timings()
         msg = self._start_acquisition()
         if check_val == 0:
             check_val = ret_val1 | ret_val2
@@ -376,9 +377,12 @@ class IxonUltra(Base, CameraInterface):
 
     def count_odmr(self, length):
         first, last = self._get_number_new_images()
-        self.log.debug('number new images:{0}'.format((first,last)))
-        while last-first + 1 < length:
-            first, last = self._get_number_new_images()
+        self.log.debug('number new images:{0}'.format((first, last)))
+        if last - first + 1 < length:
+            while last - first + 1 < length:
+                first, last = self._get_number_new_images()
+        else:
+            self.log.debug('acquired too many images:{0}'.format(last - first + 1))
 
         images = []
         for i in range(first, last + 1):
@@ -503,8 +507,10 @@ class IxonUltra(Base, CameraInterface):
             self._hend = hend.value
             self._vstart = vstart.value
             self._vend = vend.value
-        self._width = int((self._hend - self._hstart + 1) / self._hbin)
-        self._height = int((self._vend - self._vstart + 1) / self._vbin)
+            self._width = int((self._hend - self._hstart + 1) / self._hbin)
+            self._height = int((self._vend - self._vstart + 1) / self._vbin)
+        else:
+            self.log.error('Call to SetImage went wrong:{0}'.format(msg))
         return ERROR_DICT[error_code]
 
     def _set_output_amplifier(self, typ):
@@ -714,11 +720,9 @@ class IxonUltra(Base, CameraInterface):
         val_last = c_long()
         error_code = self.dll.GetImages(first_img, last_img, pointer(cimage),
                                         size, byref(val_first), byref(val_last))
-        self.log.debug('what_ever these mean: {0}, {1}'.format(val_first, val_last))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             self.log.warning('Couldn\'t retrieve an image. {0}'.format(ERROR_DICT[error_code]))
         else:
-            self.log.debug('image length {0}'.format(len(cimage)))
             for i in range(len(cimage)):
                 # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
                 image_array[i] = cimage[i]
