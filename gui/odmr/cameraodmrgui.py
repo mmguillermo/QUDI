@@ -60,9 +60,11 @@ class CameraODMRGui(GUIBase):
     # declare connectors
     odmrlogic1 = Connector(interface='ODMRLogic')
     savelogic = Connector(interface='SaveLogic')
+    camera_logic = Connector(interface='CameraLogic')
 
     sigVideoStart = QtCore.Signal()
     sigVideoStop = QtCore.Signal()
+    sigAreaChanged = QtCore.Signal(list)
     timer = QtCore.QTimer()
 
     def __init__(self, config, **kwargs):
@@ -76,6 +78,10 @@ class CameraODMRGui(GUIBase):
         """
 
         self._odmr_logic = self.odmrlogic1()
+        self._camera_logic = self.camera_logic()
+
+        # get dimensions of camera
+        self.width_x, self.width_y = self._camera_logic._hardware.get_size()
 
         # Use the inherited class 'Ui_ODMRGuiUI' to create now the GUI element:
         self._mw = CameraODMRMainWindow()
@@ -85,28 +91,66 @@ class CameraODMRGui(GUIBase):
         self.mwsettings.setValue("geometry", self._mw.saveGeometry())
         self.mwsettings.setValue("windowState", self._mw.saveState())
 
-        #TODO get this from the camera directly
-        raw_data_image = np.zeros((512, 512))
+        self.odmr_plot = pg.PlotDataItem(self._odmr_logic.odmr_plot_x,
+                                          self._odmr_logic.odmr_plot_y[0],
+                                          pen=pg.mkPen(palette.c1, style=QtCore.Qt.DotLine),
+                                          symbol='o',
+                                          symbolPen=palette.c1,
+                                          symbolBrush=palette.c1,
+                                          symbolSize=7)
 
-        self.odmr_image = pg.ImageItem(image=raw_data_image, axisOrder='row-major')
+        # configure odmr_PlotWidget
+        self._mw.odmr_PlotWidget.addItem(self.odmr_plot)
+        self._mw.odmr_PlotWidget.setLabel(axis='left', text='Counts', units='Counts/s')
+        self._mw.odmr_PlotWidget.setLabel(axis='bottom', text='Frequency', units='Hz')
+        self._mw.odmr_PlotWidget.showGrid(x=True, y=True, alpha=0.8)
 
-        self._mw.video_PlotWidget.addItem(self.odmr_image)
-        self._mw.video_PlotWidget.setLabel(axis='left', text='Counts', units='Counts/s')
-        self._mw.video_PlotWidget.setLabel(axis='bottom', text='Frequency', units='Hz')
+        # configure video_PlotWidget
+        self.raw_data_image = np.zeros((self.width_x, self.width_y))
+
+        self._image = pg.ImageItem(image=self.raw_data_image, axisOrder='row-major')
+
+        self._mw.video_PlotWidget.addItem(self._image)
         self._mw.video_PlotWidget.showGrid(x=True, y=True, alpha=0.8)
+
         # Get the colorscales at set LUT
         self.my_colors = ColorScaleInferno()
 
-        self.odmr_image.setLookupTable(self.my_colors.lut)
+        self._image.setLookupTable(self.my_colors.lut)
 
         self.averaged_image_stack = list()
+
+        # state variable signifying the area of the camera to be evaluated
+        self.area = [self.get_index(0, 0), self.get_index(self.width_x - 1, self.width_y - 1)]
 
         ########################################################################
         #                       Connect signals                                #
         ########################################################################
         # Update signals coming from logic:
-        self._odmr_logic.sigNextLine.connect(self.update_plots, QtCore.Qt.QueuedConnection)
         self.timer.timeout.connect(self.update_image)
+        self._mw.action_select.toggled.connect(self.select_clicked)
+        self._mw.video_PlotWidget.sigMouseClick.connect(self.start_select_point)
+        self._mw.video_PlotWidget.sigMouseReleased.connect(self.end_select_point)
+        self._odmr_logic.sigOdmrPlotsUpdated.connect(self.update_odmr_plot, QtCore.Qt.QueuedConnection)
+        self._odmr_logic.sigNextLine.connect(self.update_variables, QtCore.Qt.QueuedConnection)
+        # relay area to crop data
+        self.sigAreaChanged.connect(self.update_averaged_plot, QtCore.Qt.QueuedConnection)
+
+        # Connect the buttons and inputs for the colorbar
+        self._mw.xy_cb_manual_RadioButton.clicked.connect(self.update_xy_cb_range)
+        self._mw.xy_cb_centiles_RadioButton.clicked.connect(self.update_xy_cb_range)
+
+        self._mw.xy_cb_min_DoubleSpinBox.valueChanged.connect(self.shortcut_to_xy_cb_manual)
+        self._mw.xy_cb_max_DoubleSpinBox.valueChanged.connect(self.shortcut_to_xy_cb_manual)
+        self._mw.xy_cb_low_percentile_DoubleSpinBox.valueChanged.connect(self.shortcut_to_xy_cb_centiles)
+        self._mw.xy_cb_high_percentile_DoubleSpinBox.valueChanged.connect(self.shortcut_to_xy_cb_centiles)
+
+        # create color bar
+        self.xy_cb = ColorBar(self.my_colors.cmap_normed, width=100, cb_min=0, cb_max=100)
+        self._mw.xy_cb_ViewWidget.addItem(self.xy_cb)
+        self._mw.xy_cb_ViewWidget.hideAxis('bottom')
+        self._mw.xy_cb_ViewWidget.setLabel('left', 'Fluorescence', units='c')
+        self._mw.xy_cb_ViewWidget.setMouseEnabled(x=False, y=False)
 
         # Show the Main ODMR GUI:
         self.show()
@@ -120,7 +164,7 @@ class CameraODMRGui(GUIBase):
         self._mw.close()
         return 0
 
-    def update_plots(self):
+    def update_variables(self):
         n_sweeps = self._odmr_logic.elapsed_sweeps
         if n_sweeps >= 1:
             elapsed_time = self._odmr_logic.elapsed_time
@@ -137,15 +181,77 @@ class CameraODMRGui(GUIBase):
         else:
             return
 
-    def get_index(self):
+    def get_index(self, px_x, px_y):
         """
         Function to transform (a,b)->c where a,b in [0,wdith-1], [0,height-1] and
         c in [0, width*height-1].
-        This is done in analog to how np.reshape works
+        This is done in analogy to np.reshape
         :return:
         """
-        index = 0 + self.width * self.px_x + self.px_y
+        index = 0 + self.width_x * px_x + px_y
         return index
+
+    #colorbar functions
+
+        # color bar functions
+    def get_xy_cb_range(self):
+        """ Determines the cb_min and cb_max values for the xy scan image
+        """
+        # If "Manual" is checked, or the image data is empty (all zeros), then take manual cb range.
+        if self._mw.xy_cb_manual_RadioButton.isChecked() or np.max(self._image.image) == 0.0:
+            cb_min = self._mw.xy_cb_min_DoubleSpinBox.value()
+            cb_max = self._mw.xy_cb_max_DoubleSpinBox.value()
+
+        # Otherwise, calculate cb range from percentiles.
+        else:
+            # xy_image_nonzero = self._image.image[np.nonzero(self._image.image)]
+
+            # Read centile range
+            low_centile = self._mw.xy_cb_low_percentile_DoubleSpinBox.value()
+            high_centile = self._mw.xy_cb_high_percentile_DoubleSpinBox.value()
+
+            cb_min = np.percentile(self._image.image, low_centile)
+            cb_max = np.percentile(self._image.image, high_centile)
+
+        cb_range = [cb_min, cb_max]
+
+        return cb_range
+
+    def refresh_xy_colorbar(self):
+        """ Adjust the xy colorbar.
+
+        Calls the refresh method from colorbar, which takes either the lowest
+        and higherst value in the image or predefined ranges. Note that you can
+        invert the colorbar if the lower border is bigger then the higher one.
+        """
+        cb_range = self.get_xy_cb_range()
+        self.xy_cb.refresh_colorbar(cb_range[0], cb_range[1])
+
+    def refresh_xy_image(self):
+        """ Update the current XY image from the logic.
+
+        Everytime the scanner is scanning a line in xy the
+        image is rebuild and updated in the GUI.
+        """
+        self._image.getViewBox().updateAutoRange()
+
+        xy_image_data = self._image.image
+
+        cb_range = self.get_xy_cb_range()
+
+        # Now update image with new color scale, and update colorbar
+        self._image.setImage(image=xy_image_data, levels=(cb_range[0], cb_range[1]))
+        self.refresh_xy_colorbar()
+
+    def shortcut_to_xy_cb_manual(self):
+        """Someone edited the absolute counts range for the xy colour bar, better update."""
+        self._mw.xy_cb_manual_RadioButton.setChecked(True)
+        self.update_xy_cb_range()
+
+    def shortcut_to_xy_cb_centiles(self):
+        """Someone edited the centiles range for the xy colour bar, better update."""
+        self._mw.xy_cb_centiles_RadioButton.setChecked(True)
+        self.update_xy_cb_range()
 
     def update_xy_cb_range(self):
         """Redraw xy colour bar and scan image."""
@@ -155,8 +261,8 @@ class CameraODMRGui(GUIBase):
     def update_image(self):
         self.log.debug("counter:{0}".format(self.counter))
         self._mw.frequency_lcdNumber.display(self.odmr_data_x[self.counter] / 10 ** 9)
-        image = np.reshape(self.odmr_data_y[:, self.counter], (512, 512))
-        self.odmr_image.setImage(image=image)
+        image = np.reshape(self.odmr_data_y[:, self.counter], (self.width_x, self.width_y))
+        self._image.setImage(image=image)
         if self.counter < self.n_freqs-1:
             self.counter += 1
         else:
@@ -169,5 +275,131 @@ class CameraODMRGui(GUIBase):
         self._mw.activateWindow()
         self._mw.raise_()
 
+    def select_clicked(self, is_checked):
+        """ Activates the select mode in the image.
 
+        @param bool is_checked: pass the state of the zoom button if checked
+                                or not.
 
+        Depending on the state of the zoom button the DragMode in the
+        ViewWidgets are changed.  There are 3 possible modes and each of them
+        corresponds to a int value:
+            - 0: NoDrag
+            - 1: ScrollHandDrag
+            - 2: RubberBandDrag
+
+        Pyqtgraph implements every action for the NoDrag mode. That means the
+        other two modes are not used at the moment. Therefore we are using the
+        RubberBandDrag mode to simulate a zooming procedure. The selection
+        window in the RubberBandDrag is only used to show the user which region
+        will be selected. But the zooming idea is based on catched
+        mousePressEvent and mouseReleaseEvent, which will be used if the
+        RubberBandDrag mode is activated.
+
+        For more information see the qt doc:
+        http://doc.qt.io/qt-4.8/qgraphicsview.html#DragMode-enum
+        """
+
+        # You could also set the DragMode by its integer number, but in terms
+        # of readability it is better to use the direct attributes from the
+        # ViewWidgets and pass them to setDragMode.
+        if is_checked:
+            self._image.getViewBox().setLeftButtonAction('rect')
+        else:
+            self._image.getViewBox().setLeftButtonAction('pan')
+
+    def start_select_point(self, event):
+        """ Get the mouse coordinates if the mouse button was pressed.
+
+        @param QMouseEvent event: Mouse Event object which contains all the
+                                  information at the time the event was emitted
+        """
+        # catch the event if the zoom mode is activated and if the event is
+        # coming from a left mouse button.
+        if not (self._mw.action_select.isChecked() and (event.button() == QtCore.Qt.LeftButton)):
+            event.ignore()
+            return
+
+        pos = self._image.getViewBox().mapSceneToView(event.localPos())
+        # store the initial mouse position in a class variable
+        self._current_xy_zoom_start = [pos.x(), pos.y()]
+        event.accept()
+
+    def end_select_point(self, event):
+        """ Get the mouse coordinates if the mouse button was released.
+
+        @param QEvent event:
+        """
+        # catch the event if the zoom mode is activated and if the event is
+        # coming from a left mouse button.
+        if not (self._mw.action_select.isChecked() and (event.button() == QtCore.Qt.LeftButton)):
+            event.ignore()
+            return
+
+        # get the ViewBox which is also responsible for the xy_image
+        viewbox = self._image.getViewBox()
+
+        # Map the mouse position in the whole ViewWidget to the coordinate
+        # system of the ViewBox, which also includes the 2D graph:
+        pos = viewbox.mapSceneToView(event.localPos())
+        endpos = [pos.x(), pos.y()]
+        initpos = self._current_xy_zoom_start
+
+        # get the right corners from the zoom window:
+        if initpos[0] > endpos[0]:
+            xMin = endpos[0]
+            xMax = initpos[0]
+        else:
+            xMin = initpos[0]
+            xMax = endpos[0]
+
+        if initpos[1] > endpos[1]:
+            yMin = endpos[1]
+            yMax = initpos[1]
+        else:
+            yMin = initpos[1]
+            yMax = endpos[1]
+
+        # Finally change the visible area of the ViewBox:
+        event.accept()
+        self._mw.action_select.setChecked(False)
+        self.sigAreaChanged.emit([(xMin, yMin), (xMax, yMax)])
+        return
+
+    def update_averaged_plot(self, rect_pos):
+        """
+        From the position supplied by the function end_select_point via the
+        Signal sigAreaChanged.
+        :return:
+        """
+        # unpack the list
+        xmin, ymin = rect_pos[0]
+        xmax, ymax = rect_pos[1]
+
+        xmin = np.round(xmin)
+        ymin = np.round(ymin)
+        xmax = np.round(xmax)
+        ymax = np.round(ymax)
+        self.log.debug('xmin, ymin:{0},{1}'.format(xmin, ymin))
+        self.log.debug('xmax, ymax:{0}, {1}'.format(xmax, ymax))
+        ind_low = int(self.get_index(xmin, ymin))
+        ind_high = int(self.get_index(xmax, ymax))
+        # update area
+        self.area[0] = ind_low
+        self.area[1] = ind_high
+        self.log.debug('what are the indices:{0},{1}'.format(ind_low, ind_high))
+
+        # get the data needed an average it
+        odmr_plot_y = np.average(self._odmr_logic.odmr_plot_y[ind_low:ind_high, :], axis=0)
+        odmr_plot_x = self._odmr_logic.odmr_plot_x
+        self.log.debug('dimensions of odmr_plot_y:{0}'.format(odmr_plot_y.shape))
+        # Update mean signal plot
+        self.odmr_plot.setData(odmr_plot_x, odmr_plot_y)
+
+    def update_odmr_plot(self, odmr_plot_x, odmr_plot_y, odmr_plot_xy):
+        """
+        Resemble the update of plots in the logic by displaying it in the gui
+        :return:
+        """
+        self.odmr_plot.setData(odmr_plot_x,
+                                np.average(odmr_plot_y[self.area[0]:self.area[1], :], axis=0))
