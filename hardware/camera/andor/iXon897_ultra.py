@@ -196,6 +196,15 @@ class IxonUltra(Base, CameraInterface):
 
         @return bool: Success ?
         """
+        if self._read_mode != 'IMAGE':
+            self._set_read_mode('IMAGE')
+        if self._trigger_mode!= 'INTERNAL':
+            self._set_trigger_mode('INTERNAL')
+        if self._acquisition_mode != 'SINGLE_SCAN':
+            self._set_acquisition_mode('SINGLE_SCAN')
+
+        self._set_exposuretime(self._exposure)
+        self._set_acquisition_mode(self._acquisition_mode)
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
@@ -385,11 +394,13 @@ class IxonUltra(Base, CameraInterface):
             self.log.debug('acquired too many images:{0}'.format(last - first + 1))
 
         images = []
+
         for i in range(first, last + 1):
             img = self._get_images(i, i, 1)
             images.append(img)
         self.log.debug('expected number of images:{0}'.format(length))
         self.log.debug('number of images acquired:{0}'.format(len(images)))
+        self.log.debug('what is img varialbe:{0}'.format(img))
         return np.array(images).transpose()
 
     def get_down_time(self):
@@ -525,7 +536,7 @@ class IxonUltra(Base, CameraInterface):
         """
         @param c_int index: 0 - (Number of Preamp gains - 1)
         """
-        error_code = self.dll.SetPreAmpGain(index)
+        error_code = self.dll.SetPreAmpGain(c_int(index))
         return ERROR_DICT[error_code]
 
     def _set_temperature(self, temp):
@@ -730,3 +741,4 @@ class IxonUltra(Base, CameraInterface):
         self._cur_image = image_array
         return image_array
 # non interface functions regarding setpoint interface
+
