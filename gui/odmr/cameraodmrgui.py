@@ -188,7 +188,7 @@ class CameraODMRGui(GUIBase):
         This is done in analogy to np.reshape
         :return:
         """
-        index = 0 + self.width_x * px_x + px_y
+        index = int(0 + self.width_x * px_x + px_y)
         return index
 
     #colorbar functions
@@ -382,8 +382,8 @@ class CameraODMRGui(GUIBase):
         ymax = np.round(ymax)
         self.log.debug('xmin, ymin:{0},{1}'.format(xmin, ymin))
         self.log.debug('xmax, ymax:{0}, {1}'.format(xmax, ymax))
-        ind_low = int(self.get_index(xmin, ymin))
-        ind_high = int(self.get_index(xmax, ymax))
+        ind_low = self.get_index(xmin, ymin)
+        ind_high = self.get_index(xmax, ymax)
         # update area
         self.area[0] = ind_low
         self.area[1] = ind_high

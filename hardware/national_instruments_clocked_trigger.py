@@ -140,12 +140,23 @@ class NationalInstrumentsClockedTrigger(Base):
                 1000)
 
             # actually start the preconfigured clock task
-            daq.DAQmxStartTask(my_clock_daq_task)
             self._clock_daq_task = my_clock_daq_task
         except:
             self.log.exception('Error while setting up clock.')
             return -1
         return 0
+
+    def start_clock(self):
+        daq.DAQmxStartTask(self._clock_daq_task)
+
+    def stop_clock(self):
+        daq.DAQmxStopTask(self._clock_daq_task)
+
+    def configure_timing(self, length=1000):
+        daq.DAQmxCfgImplicitTiming(
+            self._clock_daq_task,
+            daq.DAQmx_Val_FiniteSamps,
+            length)
 
     def set_up_odmr_clock(self, clock_frequency=None, clock_channel=None):
         """ Configures the hardware clock of the NiDAQ card to give the timing.

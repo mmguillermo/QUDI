@@ -111,6 +111,7 @@ class ODMRCounterCamera(GenericLogic, ODMRCounterInterface):
         @return int: error code (0:OK, -1:error)
         """
         # might need call to DAQmxCfgImplicitTiming here
+        self._ctrigger_device.configure_timing(length=length)
         self._odmr_length = length
         return 0
 
@@ -123,7 +124,11 @@ class ODMRCounterCamera(GenericLogic, ODMRCounterInterface):
         @return float[]: the photon counts per second
         """
         # TODO: Figure out if clock needs to be stopped here or not.
+        # the clock here needs to be stopped for sure
+        # because during readout that mashes the whole signal
+        self._ctrigger_device.start_clock()
         data = self._counting_device.count_odmr(length)
+        self._ctrigger_device.stop_clock()
         return data
 
     def close_odmr(self):

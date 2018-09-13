@@ -371,20 +371,15 @@ class IxonUltra(Base, CameraInterface):
         else:
             self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
         self._get_acquisition_timings()
-        msg = self._start_acquisition()
         if check_val == 0:
             check_val = ret_val1 | ret_val2
-
-        if msg != 'DRV_SUCCESS':
-            ret_val3 = -1
-        else:
-            ret_val3 = 0
-
-        check_val = ret_val3 | check_val
 
         return check_val
 
     def count_odmr(self, length):
+        #TODO read out images as soon as there is more than one new.
+        self._start_acquisition()
+
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
         if last - first + 1 < length:
@@ -392,7 +387,7 @@ class IxonUltra(Base, CameraInterface):
                 first, last = self._get_number_new_images()
         else:
             self.log.debug('acquired too many images:{0}'.format(last - first + 1))
-
+        self.stop_acquisition()
         images = []
 
         for i in range(first, last + 1):
@@ -542,7 +537,7 @@ class IxonUltra(Base, CameraInterface):
     def _set_temperature(self, temp):
         temp = c_int(temp)
         error_code = self.dll.SetTemperature(temp)
-        return  ERROR_DICT[error_code]
+        return ERROR_DICT[error_code]
 
     def _set_acquisition_mode(self, mode):
         """
@@ -671,7 +666,7 @@ class IxonUltra(Base, CameraInterface):
         temp = c_int()
         error_code = self.dll.GetTemperature(byref(temp))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            self.log.error('Can not retrieve temperature'.format(ERROR_DICT[error_code]))
+            self.log.error('Can not retrieve temperature:{}'.format(ERROR_DICT[error_code]))
         return temp.value
 
     def _get_temperature_f(self):
