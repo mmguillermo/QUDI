@@ -108,7 +108,7 @@ class CameraODMRGui(GUIBase):
         # configure video_PlotWidget
         self.raw_data_image = np.zeros((self.width_x, self.width_y))
 
-        self._image = pg.ImageItem(image=self.raw_data_image, axisOrder='row-major')
+        self._image = pg.ImageItem(image=self.raw_data_image, axisOrder='col-major')
 
         self._mw.video_PlotWidget.addItem(self._image)
         self._mw.video_PlotWidget.showGrid(x=True, y=True, alpha=0.8)
