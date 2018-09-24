@@ -361,9 +361,13 @@ class IxonUltra(Base, CameraInterface):
                 self._shutter = 'open'
             else:
                 self.log.error('Problems with the shutter.')
-                check_val = -1
+                return -1
         ret_val1 = self._set_trigger_mode('EXTERNAL')
         ret_val2 = self._set_acquisition_mode('RUN_TILL_ABORT')
+        # ret_val3 = self._set_frame_transfer_mode(True)
+        ret_val3 = 0
+        if ret_val3 == -1:
+            return -1
         error_code = self.dll.PrepareAcquisition()
         error_msg = ERROR_DICT[error_code]
         if error_msg == 'DRV_SUCCESS':
@@ -371,8 +375,7 @@ class IxonUltra(Base, CameraInterface):
         else:
             self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
         self._get_acquisition_timings()
-        if check_val == 0:
-            check_val = ret_val1 | ret_val2
+        check_val = ret_val1 | ret_val2
 
         return check_val
 
@@ -554,6 +557,7 @@ class IxonUltra(Base, CameraInterface):
             check_val = -1
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             check_val = -1
+            self.log.warning('acquisition mode not correctly set:{0}'.format(ERROR_DICT(error_code)))
         else:
             self._acquisition_mode = mode
 
@@ -566,6 +570,19 @@ class IxonUltra(Base, CameraInterface):
             error_code = self.dll.CoolerOFF()
 
         return ERROR_DICT[error_code]
+
+    def _set_frame_transfer_mode(self, b_mode):
+        if b_mode:
+            error_code = self.dll.SetFrameTransferMode(b_mode)
+        else:
+            error_code = self.dll.SetFrameTransferMode(b_mode)
+
+        err_msg = ERROR_DICT[error_code]
+        if err_msg != 'DRV_SUCCESS':
+            self.log.warning('Could not set frame transfer mode:{0}'.format(err_msg))
+            return -1
+        else:
+            return 0
 
 # getter functions
     def _get_status(self, status):
