@@ -66,6 +66,7 @@ class CameraODMRGui(GUIBase):
     sigVideoStop = QtCore.Signal()
     sigAreaChanged = QtCore.Signal(list)
     timer = QtCore.QTimer()
+    sigDoCameraFit = QtCore.Signal(str, object, object, int)
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -98,6 +99,10 @@ class CameraODMRGui(GUIBase):
                                           symbolPen=palette.c1,
                                           symbolBrush=palette.c1,
                                           symbolSize=7)
+
+        self.odmr_fit_image = pg.PlotDataItem(self._odmr_logic.odmr_fit_x,
+                                              self._odmr_logic.odmr_fit_y,
+                                              pen=pg.mkPen(palette.c2))
 
         # configure odmr_PlotWidget
         self._mw.odmr_PlotWidget.addItem(self.odmr_plot)
@@ -145,7 +150,22 @@ class CameraODMRGui(GUIBase):
         self._mw.xy_cb_low_percentile_DoubleSpinBox.valueChanged.connect(self.shortcut_to_xy_cb_centiles)
         self._mw.xy_cb_high_percentile_DoubleSpinBox.valueChanged.connect(self.shortcut_to_xy_cb_centiles)
 
-        # create color bar
+        # do fit
+        self.sigDoCameraFit.connect(self._odmr_logic.do_camera_fit, QtCore.Qt.QueuedConnection)
+        self._mw.do_fit_PushButton.clicked.connect(self.do_fit)
+
+        ########################################################################
+        #                          fit settings                                #
+        ########################################################################
+        self._fsd = FitSettingsDialog(self._odmr_logic.fc)
+        self._fsd.sigFitsUpdated.connect(self._mw.fit_methods_ComboBox.setFitFunctions)
+        self._fsd.applySettings()
+        self._mw.action_FitSettings.triggered.connect(self._fsd.show)
+        self._odmr_logic.sigCameraOdmrFitUpdated.connect(self.update_fit, QtCore.Qt.QueuedConnection)
+
+        ########################################################################
+        #                             Color Bar                                #
+        ########################################################################
         self.xy_cb = ColorBar(self.my_colors.cmap_normed, width=100, cb_min=0, cb_max=100)
         self._mw.xy_cb_ViewWidget.addItem(self.xy_cb)
         self._mw.xy_cb_ViewWidget.hideAxis('bottom')
@@ -162,6 +182,8 @@ class CameraODMRGui(GUIBase):
         """
         # Disconnect signals
         self._mw.close()
+        self.sigDoCameraFit.disconnect()
+        self._fsd.sigFitsUpdated.disconnect()
         return 0
 
     def update_variables(self):
@@ -401,5 +423,42 @@ class CameraODMRGui(GUIBase):
         Resemble the update of plots in the logic by displaying it in the gui
         :return:
         """
+        self.averaged_odmr_plot_y = np.average(odmr_plot_y[self.area[0]:self.area[1], :], axis=0)
         self.odmr_plot.setData(odmr_plot_x,
-                                np.average(odmr_plot_y[self.area[0]:self.area[1], :], axis=0))
+                               self.averaged_odmr_plot_y)
+
+
+    # fit related
+
+    def do_fit(self):
+        fit_function = self._mw.fit_methods_ComboBox.getCurrentFit()[0]
+        self.sigDoCameraFit.emit(fit_function, self._odmr_logic.odmr_plot_x, self.averaged_odmr_plot_y, None)
+        return
+
+    def update_fit(self, x_data, y_data, result_str_dict, current_fit):
+        """ Update the shown fit. """
+        if current_fit != 'No Fit':
+            # display results as formatted text
+            self._mw.odmr_fit_results_DisplayWidget.clear()
+            try:
+                formated_results = units.create_formatted_output(result_str_dict)
+            except:
+                formated_results = 'this fit does not return formatted results'
+            self._mw.odmr_fit_results_DisplayWidget.setPlainText(formated_results)
+
+        self._mw.fit_methods_ComboBox.blockSignals(True)
+        self._mw.fit_methods_ComboBox.setCurrentFit(current_fit)
+        self._mw.fit_methods_ComboBox.blockSignals(False)
+
+        # check which Fit method is used and remove or add again the
+        # odmr_fit_image, check also whether a odmr_fit_image already exists.
+        if current_fit != 'No Fit':
+            self.odmr_fit_image.setData(x=x_data, y=y_data)
+            if self.odmr_fit_image not in self._mw.odmr_PlotWidget.listDataItems():
+                self._mw.odmr_PlotWidget.addItem(self.odmr_fit_image)
+        else:
+            if self.odmr_fit_image in self._mw.odmr_PlotWidget.listDataItems():
+                self._mw.odmr_PlotWidget.removeItem(self.odmr_fit_image)
+
+        self._mw.odmr_PlotWidget.getViewBox().updateAutoRange()
+        return

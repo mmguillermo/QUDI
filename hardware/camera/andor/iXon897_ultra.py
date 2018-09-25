@@ -557,7 +557,7 @@ class IxonUltra(Base, CameraInterface):
             check_val = -1
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             check_val = -1
-            self.log.warning('acquisition mode not correctly set:{0}'.format(ERROR_DICT(error_code)))
+            self.log.warning('acquisition mode not correctly set:{0}'.format(ERROR_DICT[error_code]))
         else:
             self._acquisition_mode = mode
 
