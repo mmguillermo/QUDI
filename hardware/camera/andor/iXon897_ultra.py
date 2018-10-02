@@ -142,7 +142,13 @@ class IxonUltra(Base, CameraInterface):
         # self.set_exposure(self._exposure)
         # self.set_setpoint_temperature(self._temperature)
         self.dll = cdll.LoadLibrary(self._dll_location)
-        self.dll.Initialize()
+        status_code = self.dll.Initialize()
+        status = ERROR_DICT[status_code]
+        if status == 'DRV_SUCCESS':
+            self.log.info('Camera was initialized correctly')
+        else:
+            self.log.error('Unable to initialize camera:{}'.format(status))
+        self._status = status
         nx_px, ny_px = c_int(), c_int()
         self._get_detector(nx_px, ny_px)
         self._width, self._height = nx_px.value, ny_px.value
