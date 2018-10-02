@@ -31,7 +31,6 @@ import numpy as np
 from core.module import Base, ConfigOption
 
 from interface.camera_interface import CameraInterface
-from interface.setpoint_controller_interface import SetpointControllerInterface
 
 
 class ReadMode(Enum):
@@ -143,7 +142,13 @@ class IxonUltra(Base, CameraInterface):
         # self.set_exposure(self._exposure)
         # self.set_setpoint_temperature(self._temperature)
         self.dll = cdll.LoadLibrary(self._dll_location)
-        self.dll.Initialize()
+        status_code = self.dll.Initialize()
+        status = ERROR_DICT[status_code]
+        if status == 'DRV_SUCCESS':
+            self.log.info('Camera was initialized correctly')
+        else:
+            self.log.error('Unable to initialize camera:{}'.format(status))
+        self._status = status
         nx_px, ny_px = c_int(), c_int()
         self._get_detector(nx_px, ny_px)
         self._width, self._height = nx_px.value, ny_px.value
@@ -196,15 +201,6 @@ class IxonUltra(Base, CameraInterface):
 
         @return bool: Success ?
         """
-        if self._read_mode != 'IMAGE':
-            self._set_read_mode('IMAGE')
-        if self._trigger_mode!= 'INTERNAL':
-            self._set_trigger_mode('INTERNAL')
-        if self._acquisition_mode != 'SINGLE_SCAN':
-            self._set_acquisition_mode('SINGLE_SCAN')
-
-        self._set_exposuretime(self._exposure)
-        self._set_acquisition_mode(self._acquisition_mode)
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
@@ -361,13 +357,11 @@ class IxonUltra(Base, CameraInterface):
                 self._shutter = 'open'
             else:
                 self.log.error('Problems with the shutter.')
-                return -1
+                check_val = -1
         ret_val1 = self._set_trigger_mode('EXTERNAL')
         ret_val2 = self._set_acquisition_mode('RUN_TILL_ABORT')
-        # ret_val3 = self._set_frame_transfer_mode(True)
-        ret_val3 = 0
-        if ret_val3 == -1:
-            return -1
+        # let's test the FT mode
+        # ret_val3 = self._set_frame_transfer(True)
         error_code = self.dll.PrepareAcquisition()
         error_msg = ERROR_DICT[error_code]
         if error_msg == 'DRV_SUCCESS':
@@ -375,14 +369,19 @@ class IxonUltra(Base, CameraInterface):
         else:
             self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
         self._get_acquisition_timings()
-        check_val = ret_val1 | ret_val2
+        if check_val == 0:
+            check_val = ret_val1 | ret_val2
+
+        if error_msg != 'DRV_SUCCESS':
+            ret_val3 = -1
+        else:
+            ret_val3 = 0
+
+        check_val = ret_val3 | check_val
 
         return check_val
 
     def count_odmr(self, length):
-        #TODO read out images as soon as there is more than one new.
-        self._start_acquisition()
-
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
         if last - first + 1 < length:
@@ -390,15 +389,13 @@ class IxonUltra(Base, CameraInterface):
                 first, last = self._get_number_new_images()
         else:
             self.log.debug('acquired too many images:{0}'.format(last - first + 1))
-        self.stop_acquisition()
-        images = []
 
+        images = []
         for i in range(first, last + 1):
             img = self._get_images(i, i, 1)
             images.append(img)
         self.log.debug('expected number of images:{0}'.format(length))
         self.log.debug('number of images acquired:{0}'.format(len(images)))
-        self.log.debug('what is img varialbe:{0}'.format(img))
         return np.array(images).transpose()
 
     def get_down_time(self):
@@ -534,13 +531,13 @@ class IxonUltra(Base, CameraInterface):
         """
         @param c_int index: 0 - (Number of Preamp gains - 1)
         """
-        error_code = self.dll.SetPreAmpGain(c_int(index))
+        error_code = self.dll.SetPreAmpGain(index)
         return ERROR_DICT[error_code]
 
     def _set_temperature(self, temp):
         temp = c_int(temp)
         error_code = self.dll.SetTemperature(temp)
-        return ERROR_DICT[error_code]
+        return  ERROR_DICT[error_code]
 
     def _set_acquisition_mode(self, mode):
         """
@@ -557,7 +554,6 @@ class IxonUltra(Base, CameraInterface):
             check_val = -1
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             check_val = -1
-            self.log.warning('acquisition mode not correctly set:{0}'.format(ERROR_DICT[error_code]))
         else:
             self._acquisition_mode = mode
 
@@ -571,18 +567,24 @@ class IxonUltra(Base, CameraInterface):
 
         return ERROR_DICT[error_code]
 
-    def _set_frame_transfer_mode(self, b_mode):
-        if b_mode:
-            error_code = self.dll.SetFrameTransferMode(b_mode)
-        else:
-            error_code = self.dll.SetFrameTransferMode(b_mode)
+    def _set_frame_transfer(self, bool):
+        acq_mode = self._acquisition_mode
 
-        err_msg = ERROR_DICT[error_code]
-        if err_msg != 'DRV_SUCCESS':
-            self.log.warning('Could not set frame transfer mode:{0}'.format(err_msg))
+        if (acq_mode == 'SINGLE_SCAN') | (acq_mode == 'KINETIC'):
+            self.log.debug('Setting of frame transfer mode has no effect in acquisition '
+                           'mode \'SINGLE_SCAN\' or \'KINETIC\'.')
             return -1
         else:
+            if bool:
+                rtrn_val = self.dll.SetFrameTransferMode(1)
+            else:
+                rtrn_val = self.dll.SetFrameTransferMode(0)
+
+        if ERROR_DICT[rtrn_val] == 'DRV_SUCCESS':
             return 0
+        else:
+            self.log.warning('Could not set frame transfer mode:{0}'.format(ERROR_DICT[rtrn_val]))
+            return -1
 
 # getter functions
     def _get_status(self, status):
@@ -683,7 +685,7 @@ class IxonUltra(Base, CameraInterface):
         temp = c_int()
         error_code = self.dll.GetTemperature(byref(temp))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            self.log.error('Can not retrieve temperature:{}'.format(ERROR_DICT[error_code]))
+            self.log.error('Can not retrieve temperature'.format(ERROR_DICT[error_code]))
         return temp.value
 
     def _get_temperature_f(self):
@@ -753,4 +755,3 @@ class IxonUltra(Base, CameraInterface):
         self._cur_image = image_array
         return image_array
 # non interface functions regarding setpoint interface
-
