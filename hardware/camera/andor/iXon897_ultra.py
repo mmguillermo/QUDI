@@ -105,7 +105,7 @@ class IxonUltra(Base, CameraInterface):
     _modtype = 'camera'
     _modclass = 'hardware'
 
-    _default_exposure = ConfigOption('default_exposure', 1.0)
+    _default_exposure = ConfigOption('default_exposure', 0.3)
     _default_read_mode = ConfigOption('default_read_mode', 'IMAGE')
     _default_temperature = ConfigOption('default_temperature', -70)
     _default_cooler_on = ConfigOption('default_cooler_on', True)
@@ -201,6 +201,13 @@ class IxonUltra(Base, CameraInterface):
 
         @return bool: Success ?
         """
+        if self._acquisition_mode != 'SINGLE_SCAN':
+            self._set_acquisition_mode('SINGLE_SCAN')
+        if self._trigger_mode != 'INTERNAL':
+            self._set_trigger_mode('INTERNAL')
+        if self._read_mode != 'IMAGE':
+            self._set_read_mode('IMAGE')
+        # check if acquisition settings are correct
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
