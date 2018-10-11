@@ -105,7 +105,7 @@ class IxonUltra(Base, CameraInterface):
     _modtype = 'camera'
     _modclass = 'hardware'
 
-    _default_exposure = ConfigOption('default_exposure', 0.3)
+    _default_exposure = ConfigOption('default_exposure', 1.0)
     _default_read_mode = ConfigOption('default_read_mode', 'IMAGE')
     _default_temperature = ConfigOption('default_temperature', -70)
     _default_cooler_on = ConfigOption('default_cooler_on', True)
@@ -201,13 +201,6 @@ class IxonUltra(Base, CameraInterface):
 
         @return bool: Success ?
         """
-        if self._acquisition_mode != 'SINGLE_SCAN':
-            self._set_acquisition_mode('SINGLE_SCAN')
-        if self._trigger_mode != 'INTERNAL':
-            self._set_trigger_mode('INTERNAL')
-        if self._read_mode != 'IMAGE':
-            self._set_read_mode('IMAGE')
-        # check if acquisition settings are correct
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
@@ -379,7 +372,7 @@ class IxonUltra(Base, CameraInterface):
         if check_val == 0:
             check_val = ret_val1 | ret_val2
 
-        if msg != 'DRV_SUCCESS':
+        if error_msg != 'DRV_SUCCESS':
             ret_val3 = -1
         else:
             ret_val3 = 0
@@ -389,6 +382,7 @@ class IxonUltra(Base, CameraInterface):
         return check_val
 
     def count_odmr(self, length):
+        self._start_acquisition()
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
         if last - first + 1 < length:
@@ -403,6 +397,7 @@ class IxonUltra(Base, CameraInterface):
             images.append(img)
         self.log.debug('expected number of images:{0}'.format(length))
         self.log.debug('number of images acquired:{0}'.format(len(images)))
+        self.stop_acquisition()
         return np.array(images).transpose()
 
     def get_down_time(self):

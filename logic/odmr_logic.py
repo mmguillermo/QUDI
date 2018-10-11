@@ -74,6 +74,7 @@ class ODMRLogic(GenericLogic):
     sigOutputStateUpdated = QtCore.Signal(str, bool)
     sigOdmrPlotsUpdated = QtCore.Signal(np.ndarray, np.ndarray, np.ndarray)
     sigOdmrFitUpdated = QtCore.Signal(np.ndarray, np.ndarray, dict, str)
+    sigCameraOdmrFitUpdated = QtCore.Signal(np.ndarray, np.ndarray, dict, str)
     sigOdmrElapsedTimeUpdated = QtCore.Signal(float, int)
 
     def __init__(self, config, **kwargs):
@@ -698,6 +699,29 @@ class ODMRLogic(GenericLogic):
             result_str_dict = result.result_str_dict
         self.sigOdmrFitUpdated.emit(
             self.odmr_fit_x, self.odmr_fit_y, result_str_dict, self.fc.current_fit)
+        return
+
+    def do_camera_fit(self, fit_function, x_data, y_data):
+        """
+        Execute the currently configured fit on the measurement data. Optionally on passed data
+        """
+        if fit_function is not None and isinstance(fit_function, str):
+            if fit_function in self.get_fit_functions():
+                self.fc.set_current_fit(fit_function)
+            else:
+                self.fc.set_current_fit('No Fit')
+                if fit_function != 'No Fit':
+                    self.log.warning('Fit function "{0}" not available in ODMRLogic fit container.'
+                                     ''.format(fit_function))
+
+        camera_odmr_fit_x, camera_odmr_fit_y, result = self.fc.do_fit(x_data, y_data)
+
+        if result is None:
+            result_str_dict = {}
+        else:
+            result_str_dict = result.result_str_dict
+        self.sigCameraOdmrFitUpdated.emit(
+            camera_odmr_fit_x, camera_odmr_fit_y, result_str_dict, self.fc.current_fit)
         return
 
     def save_odmr_data(self, tag=None, colorscale_range=None, percentile_range=None):
