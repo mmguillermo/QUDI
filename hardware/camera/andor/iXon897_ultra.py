@@ -382,6 +382,7 @@ class IxonUltra(Base, CameraInterface):
         return check_val
 
     def count_odmr(self, length):
+        self._start_acquisition()
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
         if last - first + 1 < length:
@@ -396,6 +397,7 @@ class IxonUltra(Base, CameraInterface):
             images.append(img)
         self.log.debug('expected number of images:{0}'.format(length))
         self.log.debug('number of images acquired:{0}'.format(len(images)))
+        self.stop_acquisition()
         return np.array(images).transpose()
 
     def get_down_time(self):
