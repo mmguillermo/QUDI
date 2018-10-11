@@ -207,7 +207,6 @@ class IxonUltra(Base, CameraInterface):
             self._set_acquisition_mode('SINGLE_SCAN')
         if self._trigger_mode != 'INTERNAL':
             self._set_trigger_mode('INTERNAL')
-
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
