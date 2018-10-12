@@ -27,6 +27,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 from enum import Enum
 from ctypes import *
 import numpy as np
+import time
 
 from core.module import Base, ConfigOption
 
@@ -387,7 +388,7 @@ class IxonUltra(Base, CameraInterface):
 
         return check_val
 
-    def count_odmr(self, length):
+    def count_odmr_old(self, length):
         self._start_acquisition()
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
@@ -405,6 +406,32 @@ class IxonUltra(Base, CameraInterface):
         self.log.debug('number of images acquired:{0}'.format(len(images)))
         self.stop_acquisition()
         return np.array(images).transpose()
+
+    def count_odmr(self, length):
+        images = list()
+        indices = list()
+        self._start_acquisition()
+        while len(images) < length:
+            first, last = self._get_number_new_images()
+            if (first < last) | (first == last == length):
+                # start readout
+                self.log.debug("first and last".format(first, last))
+                for i in range(first, last + 1):
+                    self.log.debug("readout image with index:{0}".format(i))
+                    images.append(self._get_images(i, i, 1))
+                    self.log.debug("index: {0}".format(i))
+                    indices.append(i)
+            else:
+                time.sleep(0.1)
+
+        # sanity check
+        if indices != sorted(indices):
+            self.error("Duplicates, wrong ordering - what else?")
+        if len(images) != length:
+            self.log.error('not the correct amount of images')
+        self.stop_acquisition()
+        return np.array(images).transpose()
+
 
     def get_down_time(self):
         return self._exposure
