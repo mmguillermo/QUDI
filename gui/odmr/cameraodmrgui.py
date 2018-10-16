@@ -412,11 +412,12 @@ class CameraODMRGui(GUIBase):
         self.log.debug('what are the indices:{0},{1}'.format(ind_low, ind_high))
 
         # get the data needed an average it
-        odmr_plot_y = np.average(self._odmr_logic.odmr_plot_y[ind_low:ind_high, :], axis=0)
+        # TODO is this causing performance issues?
+        self.averaged_odmr_plot_y = np.average(self._odmr_logic.odmr_plot_y[ind_low:ind_high, :], axis=0)
         odmr_plot_x = self._odmr_logic.odmr_plot_x
-        self.log.debug('dimensions of odmr_plot_y:{0}'.format(odmr_plot_y.shape))
+        self.log.debug('dimensions of odmr_plot_y:{0}'.format(self.averaged_odmr_plot_y.shape))
         # Update mean signal plot
-        self.odmr_plot.setData(odmr_plot_x, odmr_plot_y)
+        self.odmr_plot.setData(odmr_plot_x, self.averaged_odmr_plot_y )
 
     def update_odmr_plot(self, odmr_plot_x, odmr_plot_y, odmr_plot_xy):
         """
