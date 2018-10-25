@@ -150,9 +150,7 @@ class IxonUltra(Base, CameraInterface):
         else:
             self.log.error('Unable to initialize camera:{}'.format(status))
         self._status = status
-        nx_px, ny_px = c_int(), c_int()
-        self._get_detector(nx_px, ny_px)
-        self._width, self._height = nx_px.value, ny_px.value
+        self._width, self._height = self._get_detector()
         self._set_read_mode(self._read_mode)
         self._set_trigger_mode(self._trigger_mode)
         self._set_exposuretime(self._exposure)
@@ -314,7 +312,6 @@ class IxonUltra(Base, CameraInterface):
 
     # not sure if the distinguishing between gain setting and gain value will be problematic for
     # this camera model. Just keeping it in mind for now.
-    #TODO: Not really funcitonal right now.
     def set_gain(self, gain):
         """ Set the gain
 
@@ -325,7 +322,7 @@ class IxonUltra(Base, CameraInterface):
         n_pre_amps = self._get_number_preamp_gains()
         msg = ''
         if (gain >= 0) & (gain < n_pre_amps):
-            msg = self._set_preamp_gain(gain)
+            msg = self._set_preamp_gain(c_int(gain))
         else:
             self.log.warning('Choose gain value between 0 and {0}'.format(n_pre_amps-1))
         if msg == 'DRV_SUCCESS':
@@ -357,6 +354,9 @@ class IxonUltra(Base, CameraInterface):
 # soon to be interface functions for using
 # a camera as a part of a (slow) photon counter
     def set_up_counter(self):
+        """
+        Set up camera for ODMR measurement
+        """
         check_val = 0
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
@@ -390,6 +390,7 @@ class IxonUltra(Base, CameraInterface):
 
     def count_odmr_old(self, length):
         self._start_acquisition()
+
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
         if last - first + 1 < length:
@@ -456,9 +457,9 @@ class IxonUltra(Base, CameraInterface):
         return ERROR_DICT[error_code]
 
 # setter functions
-
     def _set_shutter(self, typ, mode, closingtime, openingtime):
         """
+        Function to adjust shutter
         @param int typ:   0 Output TTL low signal to open shutter
                           1 Output TTL high signal to open shutter
         @param int mode:  0 Fully Auto
@@ -471,6 +472,26 @@ class IxonUltra(Base, CameraInterface):
         error_code = self.dll.SetShutter(typ, mode, closingtime, openingtime)
 
         return ERROR_DICT[error_code]
+
+    #TODO test
+    def _open_shutter(self, shut_time=0.1):
+        """
+        Convenience function to open shutter.
+        @param: float shut_time: Time to open the shutter
+        @return: string msg: contains information if operation went through correctly.
+        """
+        error_msg = self._set_shutter(0, 1, shut_time, shut_time)
+        return error_msg
+
+    #TODO test
+    def _close_shutter(self, shut_time=0.1):
+        """
+        Convenience function to close shutter.
+        @param: float shut_time: Time to close the shutter
+        @return: string msg: contains information if operation went through correctly.
+        """
+        error_msg = self._set_shutter(0, 0, shut_time, shut_time)
+        return error_msg
 
     def _set_exposuretime(self, time):
         """
@@ -506,8 +527,18 @@ class IxonUltra(Base, CameraInterface):
 
     def _set_trigger_mode(self, mode):
         """
-        @param string mode: string corresponding to certain TriggerMode
-        @return string: answer from the camera
+        This function will set the trigger mode that the camera will operate in.
+
+        Available trigger modes:
+        0. Internal
+        1. External
+        6. External Start
+        7. External Exposure (Bulb)
+        9. External FVB EM (only valid for EM Newton models in FVB mode)
+        10. Software Trigger
+
+        @param string mode: string corresponding to certain TriggerMode (e.g. 'Internal')
+        @return string: Errormessage from the camera
         """
         check_val = 0
         if hasattr(TriggerMode, mode):
@@ -556,29 +587,44 @@ class IxonUltra(Base, CameraInterface):
 
     def _set_output_amplifier(self, typ):
         """
+        This function allows to set the output amplifier.
         @param c_int typ: 0: EMCCD gain, 1: Conventional CCD register
-        @return string: error code
+        @return string: error message
         """
         error_code = self.dll.SetOutputAmplifier(typ)
         return ERROR_DICT[error_code]
 
     def _set_preamp_gain(self, index):
         """
+        Set the gain given by the pre amplifier. The actual gain
+        factor can be retrieved with a call to '_get_pre_amp_gain'.
         @param c_int index: 0 - (Number of Preamp gains - 1)
         """
         error_code = self.dll.SetPreAmpGain(index)
         return ERROR_DICT[error_code]
 
     def _set_temperature(self, temp):
+        """
+        Set the desired temperature. To actually get the temperature on the CCD chip
+        use '_set_cooler'
+        @param float temp: desired temperature
+        @return: string error_msg: message describing the result of the function call.
+        """
         temp = c_int(temp)
         error_code = self.dll.SetTemperature(temp)
-        return  ERROR_DICT[error_code]
+        return ERROR_DICT[error_code]
 
     def _set_acquisition_mode(self, mode):
         """
-        Function to set the acquisition mode
-        @param mode:
-        @return:
+        Function to set the acquisition mode.
+        Available modes:
+            1 Single Scan
+            2 Accumulate
+            3 Kinetics
+            4 Fast Kinetics
+            5 Run till abort
+        @param string mode: e.g. 'Single Scan'
+        @return int check_val: {0: ok, -1: error}
         """
         check_val = 0
         if hasattr(AcquisitionMode, mode):
@@ -595,6 +641,11 @@ class IxonUltra(Base, CameraInterface):
         return check_val
 
     def _set_cooler(self, state):
+        """
+        Switch cooling on or off
+        @param bool state: True starts cooling, False stops cooling
+        @return: string error_msg: message containing information regarding the source of the error
+        """
         if state:
             error_code = self.dll.CoolerON()
         else:
@@ -603,6 +654,12 @@ class IxonUltra(Base, CameraInterface):
         return ERROR_DICT[error_code]
 
     def _set_frame_transfer(self, bool):
+        """
+        This function will set whether an acquisition will readout in Frame Transfer Mode. If the
+        acquisition mode is Single Scan or Fast Kinetics this call will have no affect.
+        @param bool: {True: On, False: Off}
+        @return int check_val: {-1: Error, 0: Ok}
+        """
         acq_mode = self._acquisition_mode
 
         if (acq_mode == 'SINGLE_SCAN') | (acq_mode == 'KINETIC'):
@@ -621,34 +678,82 @@ class IxonUltra(Base, CameraInterface):
             self.log.warning('Could not set frame transfer mode:{0}'.format(ERROR_DICT[rtrn_val]))
             return -1
 
+    def _set_hs_speed(self, typ, index):
+        """
+        Set the horizontal shift speed. To get the number of available shift speeds use '_get_number_hs_speeds'.
+        Corresponding to the index find out the shift frequencies with '_get_hs_speed'.
+        @param: int typ: 0 for EM amplifier and 1 for conventional amplifier
+                int index: Ranges from 0:N-1 with N given by  '_get_number_hs_speeds'.
+        @return: string error_msg: Information if function call was processed correctly.
+        """
+        error_msg = self.dll.SetHSSpeed(c_int(typ), c_int(index))
+        return ERROR_DICT[error_msg]
+
+    def _set_vs_speed(self, index):
+        """
+        Set the horizontal shift speed. To get the number of available shift speeds use '_get_number_vs_speeds'.
+        Corresponding to the index find out the shift frequencies with '_get_vs_speed'.
+        @param: int index: Ranges from 0:N-1 with N given by  '_get_number_vs_speeds'.
+        @return: string error_msg: Information if function call was processed correctly.
+        """
+        error_msg = self.dll.SetVSSpeed(c_int(index))
+        return ERROR_DICT[error_msg]
+
 # getter functions
-    def _get_status(self, status):
+    def _get_status(self):
+        """
+        This function will return the current status of the Andor SDK system. This function should
+        be called before an acquisition is started to ensure that it is IDLE and during an acquisition
+        to monitor the process.
+
+        @return: int status: Status code of the camera
+        """
+        status = c_int()
         error_code = self.dll.GetStatus(byref(status))
-        return ERROR_DICT[error_code]
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('unable to retrieve camera status: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return status.value
 
-    def _get_detector(self, nx_px, ny_px):
+    def _get_detector(self):
+        """
+        This function returns the size of the detector in pixels. The horizontal axis is taken to be
+        the axis parallel to the readout register.
+
+        @return tuple tup: width and height of the sensor in pixels
+        """
+        nx_px, ny_px = c_int(), c_int()
         error_code = self.dll.GetDetector(byref(nx_px), byref(ny_px))
-        return ERROR_DICT[error_code]
-
-    def _get_camera_serialnumber(self, number):
-        """
-        Gives serial number
-        Parameters
-        """
-        error_code = self.dll.GetCameraSerialNumber(byref(number))
-        return ERROR_DICT[error_code]
+        if ERROR_DICT[error_code] != "DRV_SUCCESS":
+            self.log.error('unable to retrieve shape of sensor: {0}'.format(ERROR_DICT[error_code]))
+            return -1, -1
+        return nx_px.value, ny_px.value
 
     def _get_acquisition_timings(self):
+        """
+        This function will return the current “valid” acquisition timing information. This function
+        should be used after all the acquisitions settings have been set, e.g. _set_exposure_time,
+        _set_kinetic_cycle_time and _set_read_mode etc. The values returned are the actual times
+        used in subsequent acquisitions.
+        This function is required as it is possible to set the exposure time to 20ms, accumulate
+        cycle time to 30ms and then set the readout mode to full image. As it can take 250ms to
+        read out an image it is not possible to have a cycle time of 30ms.
+
+        @return: tuple tup: containing in order the exposure, accumulate and kinetic cycle time.
+        """
         exposure = c_float()
         accumulate = c_float()
         kinetic = c_float()
         error_code = self.dll.GetAcquisitionTimings(byref(exposure),
                                                byref(accumulate),
                                                byref(kinetic))
-        self._exposure = exposure.value
-        self._accumulate = accumulate.value
-        self._kinetic = kinetic.value
-        return ERROR_DICT[error_code]
+
+        self._exposure, self._accumulate, self._kinetic = exposure.value, accumulate.value, kinetic.value
+
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query acquisition timings: {0}'.format(ERROR_DICT[error_code]))
+            return -1, -1, -1
+        return self._exposure, self._accumulate, self._kinetic
 
     def _get_oldest_image(self):
         """ Return an array of last acquired image.
@@ -688,35 +793,13 @@ class IxonUltra(Base, CameraInterface):
         image_array = np.reshape(image_array, (int(self._width/self._hbin), int(self._height/self._vbin)))
         return image_array
 
-    def _get_number_amp(self):
-        """
-        @return int: Number of amplifiers available
-        """
-        n_amps = c_int()
-        self.dll.GetNumberAmp(byref(n_amps))
-        return n_amps.value
-
-    def _get_number_preamp_gains(self):
-        """
-        Number of gain settings available for the pre amplifier
-
-        @return int: Number of gains available
-        """
-        n_gains = c_int()
-        self.dll.GetNumberPreAmpGains(byref(n_gains))
-        return n_gains.value
-
-    def _get_preamp_gain(self):
-        """
-        Function returning
-        @return tuple (int1, int2): First int describing the gain setting, second value the actual gain
-        """
-        index = c_int()
-        gain = c_float()
-        self.dll.GetPreAmpGain(index, byref(gain))
-        return index.value, gain.value
-
     def _get_temperature(self):
+        """
+        Returns the temperature of the detector to the nearest degree. It also gives
+        the status of cooling process.
+
+        @return: int val: temperature of the detector (in degree celsius)
+        """
         temp = c_int()
         error_code = self.dll.GetTemperature(byref(temp))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
@@ -734,6 +817,12 @@ class IxonUltra(Base, CameraInterface):
         return temp.value, ERROR_DICT[error_code]
 
     def _get_size_of_circular_ring_buffer(self):
+        """
+        Returns maximum number of images the circular buffer can store based
+        on the current acquisition settings.
+
+        @return: int val maximum amount of images that can be stored in the buffer
+        """
         index = c_long()
         error_code = self.dll.GetSizeOfCircularBuffer(byref(index))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
@@ -742,6 +831,15 @@ class IxonUltra(Base, CameraInterface):
         return index.value
 
     def _get_number_new_images(self):
+        """
+        This function will return information on the number of new images (i.e. images which have
+        not yet been retrieved) in the circular buffer. This information can be used with
+        GetImages to retrieve a series of the latest images. If any images are overwritten in the
+        circular buffer they can no longer be retrieved and the information returned will treat
+        overwritten images as having been retrieved.
+
+        @return: tuple val: Index of first and last image in the buffer
+        """
         first = c_long()
         last = c_long()
         error_code = self.dll.GetNumberNewImages(byref(first), byref(last))
@@ -754,7 +852,15 @@ class IxonUltra(Base, CameraInterface):
 
     # not working properly (only for n_scans = 1)
     def _get_images(self, first_img, last_img, n_scans):
-        """ Return an array of last acquired image.
+        """
+        This function will return a data array with the specified series of images from the
+        circular buffer. If the specified series is out of range (i.e. the images have been
+        overwritten or have not yet been acquired then an error will be returned.
+
+        @param: int first: Index of the first image
+                int last: Index of the last image
+                int n_scans: Number of images to be returned
+
 
         @return numpy array: image data in format [[row],[row]...]
 
@@ -789,4 +895,174 @@ class IxonUltra(Base, CameraInterface):
 
         self._cur_image = image_array
         return image_array
+# functions returning information about the camera used. (e.g. shift speed etc.)
+
+    def _get_number_ad_channels(self):
+        """
+        Returns number of AD channels available
+        @return int: channels availabe
+        """
+        return 1
+
+    def _get_number_amp(self):
+        """
+        Returns number of output amplifier
+        @return int: Number of amplifiers available
+        """
+        n_amps = c_int()
+        error_code = self.dll.GetNumberAmp(byref(n_amps))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query numper of amplifiers: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return n_amps.value
+
+    def _get_number_preamp_gains(self):
+        """
+        Number of gain settings available for the pre amplifier
+
+        @return int: Number of gains available
+        """
+        n_gains = c_int()
+        self.dll.GetNumberPreAmpGains(byref(n_gains))
+        return n_gains.value
+
+    def _get_preamp_gain(self, index):
+        """
+        Function returning the gain value corresponding to a given index
+        @param: int index:
+        @return: float gain: Gain factor to the index
+        """
+        gain = c_float()
+        self.dll.GetPreAmpGain(c_int(index), byref(gain))
+        return gain.value
+
+    def _get_bit_depth(self):
+        """
+        This function will retrieve the size in bits of the dynamic range for any available AD
+        channel.
+
+        @return: int depth: bit depth
+        """
+        depth = c_int()
+        error_code = self.dll.GetBitDepth(c_int(0), byref(depth))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query bit depth timings: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+
+        return depth.value
+
+    def _get_number_hs_speeds(self, typ):
+        """
+        As your Andor SDK system is capable of operating at more than one horizontal shift speed
+        this function will return the actual number of speeds available.
+
+        @param: int typ: allowed values: 0: electron multiplication
+                                         1: conventional
+
+        @return: int speeds: number of speeds available
+        """
+        channel, typ, speeds = c_int(self._get_number_ad_channels() - 1), c_int(typ), c_int()
+        error_code = self.dll.GetNumberHSSpeeds(channel, typ, byref(speeds))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query number of horizontal shift speeds'
+                             ' timings: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+
+        return speeds.value
+
+    def _get_hs_speed(self, typ, index):
+        """
+        Return horizontal shift speed for given AD channel, amplifier configuration.
+
+        @param: int typ: allowed values: 0: electron multiplication
+                                         1: conventional
+                int index: specifies the speed for a given index out of the available once
+                           returned by '_get_number_hs_speeds'
+
+        @return float speed:  speed in MHz
+        """
+        channel, typ, index = c_int(self._get_number_ad_channels() - 1), c_int(typ), c_int(index)
+        speed = c_float()
+        error_code = self.dll.GetHSSpeed(channel, typ, index, byref(speed))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query horizontal shift speed: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+
+        return speed.value
+
+    def _get_number_vs_speeds(self):
+        """
+        Returns number of vertical shift speeds available
+        @return:
+        """
+        speeds = c_int()
+        error_code = self.dll.GetNumberVSSpeeds(byref(speeds))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query number of vertical shift speeds: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return speeds.value
+
+    def _get_vs_speed(self, index):
+        """
+        Return current vertical shift speed corresponding to the index provided
+        @param: int index: Out of 0:N-1. N can be retrieved using function '_get_number_vs_speeds'
+        @return: float speed: Vertical Shift speed in MHz
+        """
+        index = c_int(index)
+        speed = c_float()
+        error_code = self.dll.GetVSSpeed(index, byref(speed))
+
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query current vertical shift speed: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+
+        return speed.value
+
+    def _get_fastest_recommended_vs_speed(self):
+        """
+        Returns fastest vertical shift speed at the current vertical clock voltage
+        @return: tuple (int_val, float_val): index of the vertical shift speed and value corresponding to the index in
+                 MHz per pixel shift
+        """
+        index = c_int()
+        speed = c_float()
+        error_code = self.dll.GetFastestRecommendedVSSpeed(byref(index), byref(speed))
+
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query fastest recommended vertical shift'
+                             ' speed: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+
+        return index.value, speed.value
+
+    def _get_camera_serialnumber(self):
+        """
+        Gives serial number
+        @return: int number: The serial number of the camera
+        """
+        number = c_int()
+        error_code = self.dll.GetCameraSerialNumber(byref(number))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query camera serial number'
+                             ' speed: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return number.value
+
+    # Unstable
+    def _is_pre_amp_gain_available(self, amplifier, index, preamp):
+        """
+        This function checks that the AD channel exists, and that the amplifier, speed and gain
+        are available for the AD channel.
+        @params: int amplifier: value corresponding to the output amplifier used
+                 int index: channel speed index ?
+                 int preamp: index of the pre amp gain desired
+        @return:
+        """
+        amplifier, index, preamp, status = c_int(amplifier), c_int(index), c_int(preamp), c_int()
+        error_code = self.dll.IsPreAmpGainAvailable(amplifier, index, preamp, byref(status))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query if preamp gain is available'
+                             ' speed: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return status.value
 # non interface functions regarding setpoint interface
