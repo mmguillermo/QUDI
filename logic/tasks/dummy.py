@@ -21,23 +21,24 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 from logic.generic_task import InterruptableTask
 import time
 
+
 class Task(InterruptableTask):
     """ Dummy task, does nothing. """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        print('Task {0} added!'.format(self.name))
+        self.log.warning('Task {0} added!'.format(self.name))
         self.ctr = 0
 
     def startTask(self):
         """ Dummy start """
-        print('Start')
+        self.log.warning('Start task {0}'.format(self.name))
         self.ctr = 0
 
     def runTaskStep(self):
         """ Dummy step """
         time.sleep(0.1)
-        print('one task step', self.ctr)
+        print('one task step {0}'.format(self.ctr))
         self.ctr += 1
         self._result = '{0} lines printed!'.format(self.ctr)
         return self.ctr < 50
@@ -45,17 +46,17 @@ class Task(InterruptableTask):
     def pauseTask(self):
         """ Dummy pause """
         time.sleep(1)
-        print('paused task')
+        self.log.warning('paused task {0}'.format(self.name))
 
     def resumeTask(self):
         """ Dummy resume """
         time.sleep(1)
-        print('resumed task')
+        self.log.warning('resumed task {0}'.format(self.name))
 
     def cleanupTask(self):
         """ Dummy cleanup """
         print(self._result)
-        print('task cleaned up')
+        self.log.warning('task {0} cleaned up'.format(self.name))
 
     def checkExtraStartPrerequisites(self):
         """ Check extra start prerequisites, there are none """
