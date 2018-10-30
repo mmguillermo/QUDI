@@ -27,7 +27,6 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 from enum import Enum
 from ctypes import *
 import numpy as np
-import time
 
 from core.module import Base, ConfigOption
 
@@ -145,13 +144,7 @@ class IxonUltra(Base, CameraInterface):
         # self.set_exposure(self._exposure)
         # self.set_setpoint_temperature(self._temperature)
         self.dll = cdll.LoadLibrary(self._dll_location)
-        status_code = self.dll.Initialize()
-        status = ERROR_DICT[status_code]
-        if status == 'DRV_SUCCESS':
-            self.log.info('Camera was initialized correctly')
-        else:
-            self.log.error('Unable to initialize camera:{}'.format(status))
-        self._status = status
+        self.dll.Initialize()
         self._width, self._height = self._get_detector()
         self._set_read_mode(self._read_mode)
         self._set_trigger_mode(self._trigger_mode)
@@ -336,7 +329,7 @@ class IxonUltra(Base, CameraInterface):
                 gain_index = index
                 break
 
-        msg = self._set_preamp_gain(c_int(gain_index))
+        msg = self._set_preamp_gain(gain_index)
         if msg == 'DRV_SUCCESS':
             self._preamp_gain_index = gain_index
             self._gain = gain
@@ -392,7 +385,7 @@ class IxonUltra(Base, CameraInterface):
         if check_val == 0:
             check_val = ret_val1 | ret_val2
 
-        if error_msg != 'DRV_SUCCESS':
+        if msg != 'DRV_SUCCESS':
             ret_val3 = -1
         else:
             ret_val3 = 0
@@ -401,8 +394,7 @@ class IxonUltra(Base, CameraInterface):
 
         return check_val
 
-    def count_odmr_old(self, length):
-        self._start_acquisition()
+    def count_odmr(self, length):
 
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
@@ -418,34 +410,7 @@ class IxonUltra(Base, CameraInterface):
             images.append(img)
         self.log.debug('expected number of images:{0}'.format(length))
         self.log.debug('number of images acquired:{0}'.format(len(images)))
-        self.stop_acquisition()
         return np.array(images).transpose()
-
-    def count_odmr(self, length):
-        images = list()
-        indices = list()
-        self._start_acquisition()
-        while len(images) < length:
-            first, last = self._get_number_new_images()
-            if (first < last) | (first == last == length):
-                # start readout
-                self.log.debug("first and last".format(first, last))
-                for i in range(first, last + 1):
-                    self.log.debug("readout image with index:{0}".format(i))
-                    images.append(self._get_images(i, i, 1))
-                    self.log.debug("index: {0}".format(i))
-                    indices.append(i)
-            else:
-                time.sleep(0.1)
-
-        # sanity check
-        if indices != sorted(indices):
-            self.error("Duplicates, wrong ordering - what else?")
-        if len(images) != length:
-            self.log.error('not the correct amount of images')
-        self.stop_acquisition()
-        return np.array(images).transpose()
-
 
     def get_down_time(self):
         return self._exposure
@@ -612,8 +577,11 @@ class IxonUltra(Base, CameraInterface):
         Set the gain given by the pre amplifier. The actual gain
         factor can be retrieved with a call to '_get_pre_amp_gain'.
         @param c_int index: 0 - (Number of Preamp gains - 1)
+        @return: string error_msg: Describing if call to function was ok or not
         """
-        error_code = self.dll.SetPreAmpGain(index)
+        error_code = self.dll.SetPreAmpGain(c_int(index))
+        if ERROR_DICT[error_code] == 'DRV_SUCCESS':
+            self._gain = self._get_preamp_gain(index)
         return ERROR_DICT[error_code]
 
     def _set_temperature(self, temp):
