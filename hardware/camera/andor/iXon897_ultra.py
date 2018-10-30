@@ -363,16 +363,18 @@ class IxonUltra(Base, CameraInterface):
         """
         Set up camera for ODMR measurement
         """
-        check_val = 0
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
                 self._shutter = 'open'
             else:
                 self.log.error('Problems with the shutter.')
-                check_val = -1
+                return -1
         ret_val1 = self._set_trigger_mode('EXTERNAL')
         ret_val2 = self._set_acquisition_mode('RUN_TILL_ABORT')
+
+        if (ret_val1 < 0) | (ret_val2 < 0):
+            return -1
         # let's test the FT mode
         # ret_val3 = self._set_frame_transfer(True)
         error_code = self.dll.PrepareAcquisition()
@@ -381,35 +383,26 @@ class IxonUltra(Base, CameraInterface):
             self.log.debug('prepared acquisition')
         else:
             self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
+            return -1
         self._get_acquisition_timings()
-        if check_val == 0:
-            check_val = ret_val1 | ret_val2
 
-        if msg != 'DRV_SUCCESS':
-            ret_val3 = -1
-        else:
-            ret_val3 = 0
-
-        check_val = ret_val3 | check_val
-
-        return check_val
+        return 0
 
     def count_odmr(self, length):
-
+        self._start_acquisition()
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
-        if last - first + 1 < length:
-            while last - first + 1 < length:
-                first, last = self._get_number_new_images()
-        else:
-            self.log.debug('acquired too many images:{0}'.format(last - first + 1))
 
+        # read images as soon as they are acquired and check if list has correct size
         images = []
-        for i in range(first, last + 1):
-            img = self._get_images(i, i, 1)
-            images.append(img)
-        self.log.debug('expected number of images:{0}'.format(length))
-        self.log.debug('number of images acquired:{0}'.format(len(images)))
+        while len(images) < length:
+            first, last = self._get_number_new_images()
+            if (first < last) | (first == last == length):
+                for i in range(first, last + 1):
+                    img = self._get_images(i, i, 1)
+                    images.append(img)
+
+        self.stop_acquisition()
         return np.array(images).transpose()
 
     def get_down_time(self):
@@ -516,7 +509,7 @@ class IxonUltra(Base, CameraInterface):
         10. Software Trigger
 
         @param string mode: string corresponding to certain TriggerMode (e.g. 'Internal')
-        @return string: Errormessage from the camera
+        @return int k: {0:Ok, -1:error}
         """
         check_val = 0
         if hasattr(TriggerMode, mode):
@@ -525,13 +518,13 @@ class IxonUltra(Base, CameraInterface):
             error_code = self.dll.SetTriggerMode(n_mode)
         else:
             self.log.warning('{0} mode is not supported'.format(mode))
-            check_val = -1
+            return -1
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            check_val = -1
+            self.log.warning('Errormsg: {0}'.format(ERROR_DICT[error_code]))
+            return -1
         else:
             self._trigger_mode = mode
-
-        return check_val
+        return 0
 
     def _set_image(self, hbin, vbin, hstart, hend, vstart, vend):
         """
@@ -607,19 +600,19 @@ class IxonUltra(Base, CameraInterface):
         @param string mode: e.g. 'Single Scan'
         @return int check_val: {0: ok, -1: error}
         """
-        check_val = 0
         if hasattr(AcquisitionMode, mode):
             n_mode = c_int(getattr(AcquisitionMode, mode).value)
             error_code = self.dll.SetAcquisitionMode(n_mode)
         else:
             self.log.warning('{0} mode is not supported'.format(mode))
-            check_val = -1
+            return -1
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            check_val = -1
+            self.log.warning('Errormsg: {0}'.format(ERROR_DICT[error_code]))
+            return -1
         else:
             self._acquisition_mode = mode
 
-        return check_val
+        return 0
 
     def _set_cooler(self, state):
         """
