@@ -714,14 +714,14 @@ class ODMRLogic(GenericLogic):
                     self.log.warning('Fit function "{0}" not available in ODMRLogic fit container.'
                                      ''.format(fit_function))
 
-        camera_odmr_fit_x, camera_odmr_fit_y, result = self.fc.do_fit(x_data, y_data)
+        self.camera_odmr_fit_x, self.camera_odmr_fit_y, result = self.fc.do_fit(x_data, y_data)
 
         if result is None:
             result_str_dict = {}
         else:
             result_str_dict = result.result_str_dict
         self.sigCameraOdmrFitUpdated.emit(
-            camera_odmr_fit_x, camera_odmr_fit_y, result_str_dict, self.fc.current_fit)
+            self.camera_odmr_fit_x, self.camera_odmr_fit_y, result_str_dict, self.fc.current_fit)
         return
 
     def save_odmr_data(self, tag=None, colorscale_range=None, percentile_range=None):
