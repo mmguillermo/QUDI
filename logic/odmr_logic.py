@@ -126,6 +126,7 @@ class ODMRLogic(GenericLogic):
              len(self._odmr_counter.get_odmr_channels()),
             self.odmr_plot_x.size]
             )
+        self.camera_odmr_fit_x, self.camera_odmr_fit_y = [], []
 
         # Switch off microwave and set CW frequency and power
         self.mw_off()

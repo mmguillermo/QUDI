@@ -28,13 +28,12 @@ from gui.guibase import GUIBase
 from gui.guiutils import ColorBar
 from gui.colordefs import ColorScaleInferno
 from gui.colordefs import QudiPalettePale as palette
-from gui.fitsettings import FitSettingsDialog, FitSettingsComboBox
+from gui.fitsettings import FitSettingsDialog
 from qtpy import QtCore
 from qtpy import QtWidgets
 from qtpy import uic
-from qtpy import QtGui
-import time
-import threading
+from collections import OrderedDict
+import datetime
 
 class CameraODMRMainWindow(QtWidgets.QMainWindow):
     """ The main window for the ODMR measurement GUI.
@@ -80,9 +79,12 @@ class CameraODMRGui(GUIBase):
 
         self._odmr_logic = self.odmrlogic1()
         self._camera_logic = self.camera_logic()
+        self._save_logic = self.savelogic()
 
         # get dimensions of camera
         self.width_x, self.width_y = self._camera_logic._hardware.get_size()
+        self._current_xy_zoom_start = [0, 0]
+        self._current_xy_zoom_end = [self.width_x, self.width_y]
 
         # Use the inherited class 'Ui_ODMRGuiUI' to create now the GUI element:
         self._mw = CameraODMRMainWindow()
@@ -138,6 +140,7 @@ class CameraODMRGui(GUIBase):
         self._mw.video_PlotWidget.sigMouseReleased.connect(self.end_select_point)
         self._odmr_logic.sigOdmrPlotsUpdated.connect(self.update_odmr_plot, QtCore.Qt.QueuedConnection)
         self._odmr_logic.sigNextLine.connect(self.update_variables, QtCore.Qt.QueuedConnection)
+        self._mw.action_save.triggered.connect(self.save_data)
         # relay area to crop data
         self.sigAreaChanged.connect(self.update_averaged_plot, QtCore.Qt.QueuedConnection)
 
@@ -172,6 +175,14 @@ class CameraODMRGui(GUIBase):
         self._mw.xy_cb_ViewWidget.setLabel('left', 'Fluorescence', units='c')
         self._mw.xy_cb_ViewWidget.setMouseEnabled(x=False, y=False)
 
+        # Add save file tag input box
+        self._mw.save_tag_LineEdit = QtWidgets.QLineEdit(self._mw)
+        self._mw.save_tag_LineEdit.setMaximumWidth(500)
+        self._mw.save_tag_LineEdit.setMinimumWidth(200)
+        self._mw.save_tag_LineEdit.setToolTip('Enter a nametag which will be\n'
+                                              'added to the filename.')
+        self._mw.save_ToolBar.addWidget(self._mw.save_tag_LineEdit)
+
         # Show the Main ODMR GUI:
         self.show()
 
@@ -184,6 +195,7 @@ class CameraODMRGui(GUIBase):
         self._mw.close()
         self.sigDoCameraFit.disconnect()
         self._fsd.sigFitsUpdated.disconnect()
+        self._mw.action_save.triggered.disconnect()
         return 0
 
     def update_variables(self):
@@ -365,6 +377,7 @@ class CameraODMRGui(GUIBase):
         # system of the ViewBox, which also includes the 2D graph:
         pos = viewbox.mapSceneToView(event.localPos())
         endpos = [pos.x(), pos.y()]
+        self._current_xy_zoom_end = endpos
         initpos = self._current_xy_zoom_start
 
         # get the right corners from the zoom window:
@@ -462,4 +475,39 @@ class CameraODMRGui(GUIBase):
                 self._mw.odmr_PlotWidget.removeItem(self.odmr_fit_image)
 
         self._mw.odmr_PlotWidget.getViewBox().updateAutoRange()
+        return
+
+    def save_data(self):
+        """ For the moment just save the data extracted  """
+        tag = self._mw.save_tag_LineEdit.text()
+        timestamp = datetime.datetime.now()
+        selected_area_dict = {'start_xy': self._current_xy_zoom_start, 'end_xy': self._current_xy_zoom_end}
+        parameters = OrderedDict()
+        parameters['Microwave CW Power (dBm)'] = self._odmr_logic.cw_mw_power
+        parameters['Microwave Sweep Power (dBm)'] = self._odmr_logic.sweep_mw_power
+        parameters['Run Time (s)'] = self._odmr_logic.run_time
+        parameters['Number of frequency sweeps (#)'] = self._odmr_logic.elapsed_sweeps
+        parameters['Start Frequency (Hz)'] = self._odmr_logic.mw_start
+        parameters['Stop Frequency (Hz)'] = self._odmr_logic.mw_stop
+        parameters['Step size (Hz)'] = self._odmr_logic.mw_step
+        parameters['Clock Frequency (Hz)'] = self._odmr_logic.clock_frequency
+        parameters['Selected Area'] = selected_area_dict
+        parameters['Exposure time'] = self._camera_logic._exposure
+        # TODO: also save a figure of the data.
+        if len(tag) > 0:
+            filelabel = '{ODMR_data_{1}'.format(tag)
+        else:
+            filelabel = 'ODMR_data'
+
+        if self._odmr_logic.fc.current_fit != 'No Fit':
+            parameters['Fit function'] = self.fc.current_fit
+
+        freqs = self._odmr_logic.odmr_plot_x
+        counts = self.averaged_odmr_plot_y
+        fit_result = self._odmr_logic.camera_odmr_fit_y
+        data = {'Frequency (MHz)': freqs, 'Counts (a.u.)': counts}
+        if fit_result:
+            data['fit_result'] = fit_result
+        self._save_logic.save_data(data, parameters=parameters, filelabel=filelabel,
+                                   timestamp=timestamp)
         return
