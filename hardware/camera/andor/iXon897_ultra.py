@@ -395,13 +395,14 @@ class IxonUltra(Base, CameraInterface):
 
         # read images as soon as they are acquired and check if list has correct size
         images = []
-        while len(images) < length:
+        while len(images) < length + 1:
             first, last = self._get_number_new_images()
             if (first < last) | (first == last == length):
                 for i in range(first, last + 1):
                     img = self._get_images(i, i, 1)
                     images.append(img)
-
+        # the first frequency has two triggers, therefore remove one image
+        del images[0]
         self.stop_acquisition()
         return np.array(images).transpose()
 
