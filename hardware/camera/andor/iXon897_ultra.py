@@ -431,7 +431,8 @@ class IxonUltra(Base, CameraInterface):
 
     def _start_acquisition(self):
         error_code = self.dll.StartAcquisition()
-        self.dll.WaitForAcquisition()
+        if self._trigger_mode == 'INTERNAL':
+            self.dll.WaitForAcquisition()
         return ERROR_DICT[error_code]
 
 # setter functions
