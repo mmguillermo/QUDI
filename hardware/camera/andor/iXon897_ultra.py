@@ -278,8 +278,7 @@ class IxonUltra(Base, CameraInterface):
             for i in range(len(cimage)):
                 # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
                 image_array[i] = cimage[i]
-
-        image_array = np.reshape(image_array, (self._width, self._height))
+        image_array = np.reshape(image_array, (self._height, self._width))
 
         self._cur_image = image_array
         return image_array
@@ -363,16 +362,18 @@ class IxonUltra(Base, CameraInterface):
         """
         Set up camera for ODMR measurement
         """
-        check_val = 0
         if self._shutter == 'closed':
             msg = self._set_shutter(0, 1, 0.1, 0.1)
             if msg == 'DRV_SUCCESS':
                 self._shutter = 'open'
             else:
                 self.log.error('Problems with the shutter.')
-                check_val = -1
+                return -1
         ret_val1 = self._set_trigger_mode('EXTERNAL')
         ret_val2 = self._set_acquisition_mode('RUN_TILL_ABORT')
+
+        if (ret_val1 < 0) | (ret_val2 < 0):
+            return -1
         # let's test the FT mode
         # ret_val3 = self._set_frame_transfer(True)
         error_code = self.dll.PrepareAcquisition()
@@ -381,35 +382,28 @@ class IxonUltra(Base, CameraInterface):
             self.log.debug('prepared acquisition')
         else:
             self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
+            return -1
         self._get_acquisition_timings()
-        if check_val == 0:
-            check_val = ret_val1 | ret_val2
 
-        if msg != 'DRV_SUCCESS':
-            ret_val3 = -1
-        else:
-            ret_val3 = 0
-
-        check_val = ret_val3 | check_val
-
-        return check_val
+        return 0
 
     def count_odmr(self, length):
-
+        self._start_acquisition()
         first, last = self._get_number_new_images()
         self.log.debug('number new images:{0}'.format((first, last)))
-        if last - first + 1 < length:
-            while last - first + 1 < length:
-                first, last = self._get_number_new_images()
-        else:
-            self.log.debug('acquired too many images:{0}'.format(last - first + 1))
 
+        # read images as soon as they are acquired and check if list has correct size
         images = []
-        for i in range(first, last + 1):
-            img = self._get_images(i, i, 1)
-            images.append(img)
-        self.log.debug('expected number of images:{0}'.format(length))
-        self.log.debug('number of images acquired:{0}'.format(len(images)))
+        while len(images) < length + 1:
+            first, last = self._get_number_new_images()
+            if (first < last) | (first == last == length):
+                for i in range(first, last + 1):
+                    img = self._get_images(i, i, 1)
+                    images.append(img)
+        # the first frequency has two triggers, therefore remove one image
+        del images[0]
+        self.stop_acquisition()
+
         return np.array(images).transpose()
 
     def get_down_time(self):
@@ -785,7 +779,7 @@ class IxonUltra(Base, CameraInterface):
         temp = c_int()
         error_code = self.dll.GetTemperature(byref(temp))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            self.log.error('Can not retrieve temperature'.format(ERROR_DICT[error_code]))
+            self.log.error('Can not retrieve temperature {0}'.format(ERROR_DICT[error_code]))
         return temp.value
 
     def _get_temperature_f(self):
@@ -973,6 +967,16 @@ class IxonUltra(Base, CameraInterface):
 
         return speed.value
 
+    def _get_available_hs_speeds(self, typ):
+        """
+        Convenience function returning the available horizontal readout speeds
+        @param: int typ: allowed values: 0: electron multiplication
+                                         1: conventional
+        @return list hs_speeds: available horizontal readout speeds in MHz
+        """
+        hs_freqs = [self._get_hs_speed(typ, i) for i in range(self._get_number_hs_speeds(typ))]
+        return hs_freqs
+
     def _get_number_vs_speeds(self):
         """
         Returns number of vertical shift speeds available
@@ -1000,6 +1004,16 @@ class IxonUltra(Base, CameraInterface):
             return -1
 
         return speed.value
+
+    def _get_available_vs_speeds(self):
+        """
+        Convenience function returning the available vertical shift frequencies
+        @param: int typ: allowed values: 0: electron multiplication
+                                         1: conventional
+        @return list hs_speeds: available horizontal readout speeds in MHz
+        """
+        vs_freqs = [self._get_vs_speed(i) for i in range(self._get_number_vs_speeds())]
+        return vs_freqs
 
     def _get_fastest_recommended_vs_speed(self):
         """
