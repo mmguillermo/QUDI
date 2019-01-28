@@ -105,58 +105,69 @@ class IxonUltra(Base, CameraInterface):
     _modtype = 'camera'
     _modclass = 'hardware'
 
-    _default_exposure = ConfigOption('default_exposure', 1.0)
+    _default_exposure = ConfigOption('default_exposure', 0.17)
     _default_read_mode = ConfigOption('default_read_mode', 'IMAGE')
-    _default_temperature = ConfigOption('default_temperature', -70)
+    _default_temperature = ConfigOption('default_temperature', 0)
     _default_cooler_on = ConfigOption('default_cooler_on', True)
     _default_acquisition_mode = ConfigOption('default_acquisition_mode', 'SINGLE_SCAN')
     _default_trigger_mode = ConfigOption('default_trigger_mode', 'INTERNAL')
     _default_preamp_gain_index = ConfigOption('default_preamp_gain_index', 2)
+    _default_horizontal_readout_index = ConfigOption('default_horizontal_readout_index', 0)
+    _default_vertical_readout_index = ConfigOption('default_vertical_readout_index', 4)
+    # 0: EM amplifier 1: Conventional amplifier
+    _default_output_amplifier = ConfigOption('default_output_amplifier', 1)
     _dll_location = ConfigOption('dll_location', missing='error')
-
 
     _exposure = _default_exposure
     _temperature = _default_temperature
     _cooler_on = _default_cooler_on
     _read_mode = _default_read_mode
     _acquisition_mode = _default_acquisition_mode
+    _trigger_mode = _default_trigger_mode
+    _preamp_gain_index = _default_preamp_gain_index
+    _horizontal_readout_index = _default_horizontal_readout_index
+    _vertical_readout_index = _default_vertical_readout_index
+    #TODO horizontal readout speed depends on output amplifier, therefore should ensure that only valid pairings
+    #     are chosen
+    _output_amplifier = _default_output_amplifier
     _gain = 0
     _width = 0
     _height = 0
     _last_acquisition_mode = None  # useful if config changes during acq
     _supported_read_mode = ReadMode # TODO: read this from camera, all readmodes are available for iXon Ultra
-    _max_cooling = -100
+    _min_temperature = -100
     _live = False
     _camera_name = 'iXon Ultra 897'
     _shutter = "closed"
-    _trigger_mode = _default_trigger_mode
     _scans = 1 #TODO get from camera
     _acquiring = False
     _preamp_gain_index = _default_preamp_gain_index
+    _verbose = True
+    _baseline = 200
 
     def on_activate(self):
         """ Initialisation performed during activation of the module.
          """
-        # self.cam.SetAcquisitionMode(1)  # single
-        # self.cam.SetTriggerMode(0)  # internal
-        # self.cam.SetCoolerMode(0)  # Returns to ambient temperature on ShutDown
-        # self.set_cooler_on_state(self._cooler_on)
-        # self.set_exposure(self._exposure)
-        # self.set_setpoint_temperature(self._temperature)
         self.dll = cdll.LoadLibrary(self._dll_location)
         self.dll.Initialize()
         self._width, self._height = self._get_detector()
         self._set_read_mode(self._read_mode)
         self._set_trigger_mode(self._trigger_mode)
-        self._set_exposuretime(self._exposure)
+        self.set_exposure(self._exposure)
         self._set_acquisition_mode(self._acquisition_mode)
-        self._set_preamp_gain(self._preamp_gain_index)
+        self.set_gain(self._preamp_gain_index)
+        self._set_temperature(self._temperature)
+        self._set_cooler(self._cooler_on)
+        self._set_output_amplifier(self._output_amplifier)
+        self._set_hs_speed(self._output_amplifier, self._horizontal_readout_index)
+        self._set_vs_speed(self._vertical_readout_index)
+
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
         """
         self.stop_acquisition()
-        self._set_shutter(0, 0, 0.1, 0.1)
+        self._close_shutter()
         self._shut_down()
 
     def get_name(self):
@@ -275,11 +286,13 @@ class IxonUltra(Base, CameraInterface):
             self.log.warning('Couldn\'t retrieve an image. {0}'.format(ERROR_DICT[error_code]))
         else:
             self.log.debug('image length {0}'.format(len(cimage)))
+            self._c_image = cimage
             for i in range(len(cimage)):
                 # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
                 image_array[i] = cimage[i]
         image_array = np.reshape(image_array, (self._height, self._width))
-
+        # substract base line
+        image_array -= self._baseline
         self._cur_image = image_array
         return image_array
 
@@ -290,12 +303,13 @@ class IxonUltra(Base, CameraInterface):
 
         @return bool: Success?
         """
-        msg = self._set_exposuretime(exposure)
-        if msg == "DRV_SUCCESS":
+        error_code = self.dll.SetExposureTime(c_float(exposure))
+        if ERROR_DICT[error_code] == "DRV_SUCCESS":
             self._exposure = exposure
-            return True
+            return 0
         else:
-            return False
+            self.log.warning('unable to set exposure time: {}'.format(ERROR_DICT[error_code]))
+            return -1
 
     def get_exposure(self):
         """ Get the exposure time in seconds
@@ -356,64 +370,6 @@ class IxonUltra(Base, CameraInterface):
         else:
             return False
 
-# soon to be interface functions for using
-# a camera as a part of a (slow) photon counter
-    def set_up_counter(self):
-        """
-        Set up camera for ODMR measurement
-        """
-        if self._shutter == 'closed':
-            msg = self._set_shutter(0, 1, 0.1, 0.1)
-            if msg == 'DRV_SUCCESS':
-                self._shutter = 'open'
-            else:
-                self.log.error('Problems with the shutter.')
-                return -1
-        ret_val1 = self._set_trigger_mode('EXTERNAL')
-        ret_val2 = self._set_acquisition_mode('RUN_TILL_ABORT')
-
-        if (ret_val1 < 0) | (ret_val2 < 0):
-            return -1
-        # let's test the FT mode
-        # ret_val3 = self._set_frame_transfer(True)
-        error_code = self.dll.PrepareAcquisition()
-        error_msg = ERROR_DICT[error_code]
-        if error_msg == 'DRV_SUCCESS':
-            self.log.debug('prepared acquisition')
-        else:
-            self.log.debug('could not prepare acquisition: {0}'.format(error_msg))
-            return -1
-        self._get_acquisition_timings()
-
-        return 0
-
-    def count_odmr(self, length):
-        self._start_acquisition()
-        first, last = self._get_number_new_images()
-        self.log.debug('number new images:{0}'.format((first, last)))
-
-        # read images as soon as they are acquired and check if list has correct size
-        images = []
-        while len(images) < length + 1:
-            first, last = self._get_number_new_images()
-            if (first < last) | (first == last == length):
-                for i in range(first, last + 1):
-                    img = self._get_images(i, i, 1)
-                    images.append(img)
-        # the first frequency has two triggers, therefore remove one image
-        del images[0]
-        self.stop_acquisition()
-
-        return np.array(images).transpose()
-
-    def get_down_time(self):
-        return self._exposure
-
-    def get_counter_channels(self):
-        width, height = self.get_size()
-        num_px = width * height
-        return [i for i in map(lambda x: 'px {0}'.format(x), range(num_px))]
-
 # non interface functions regarding camera interface
     def _abort_acquisition(self):
         error_code = self.dll.AbortAcquisition()
@@ -446,7 +402,6 @@ class IxonUltra(Base, CameraInterface):
 
         return ERROR_DICT[error_code]
 
-    #TODO test
     def _open_shutter(self, shut_time=0.1):
         """
         Convenience function to open shutter.
@@ -456,23 +411,14 @@ class IxonUltra(Base, CameraInterface):
         error_msg = self._set_shutter(0, 1, shut_time, shut_time)
         return error_msg
 
-    #TODO test
     def _close_shutter(self, shut_time=0.1):
         """
         Convenience function to close shutter.
         @param: float shut_time: Time to close the shutter
         @return: string msg: contains information if operation went through correctly.
         """
-        error_msg = self._set_shutter(0, 0, shut_time, shut_time)
+        error_msg = self._set_shutter(0, 2, shut_time, shut_time)
         return error_msg
-
-    def _set_exposuretime(self, time):
-        """
-        @param float time: exposure duration
-        @return string answer from the camera
-        """
-        error_code = self.dll.SetExposureTime(c_float(time))
-        return ERROR_DICT[error_code]
 
     def _set_read_mode(self, mode):
         """
@@ -576,6 +522,7 @@ class IxonUltra(Base, CameraInterface):
         """
         error_code = self.dll.SetPreAmpGain(c_int(index))
         if ERROR_DICT[error_code] == 'DRV_SUCCESS':
+            self._preamp_gain_index = index
             self._gain = self._get_preamp_gain(index)
         return ERROR_DICT[error_code]
 
@@ -586,8 +533,14 @@ class IxonUltra(Base, CameraInterface):
         @param float temp: desired temperature
         @return: string error_msg: message describing the result of the function call.
         """
-        temp = c_int(temp)
-        error_code = self.dll.SetTemperature(temp)
+        if temp > self._min_temperature:
+            temp = c_int(temp)
+            error_code = self.dll.SetTemperature(temp)
+        else:
+            self.log.error('can not cool below:{0}'.format(self._min_temperature))
+
+        if ERROR_DICT[error_code] == 'DRV_SUCCESS':
+            self._temperature = temp
         return ERROR_DICT[error_code]
 
     def _set_acquisition_mode(self, mode):
@@ -662,8 +615,13 @@ class IxonUltra(Base, CameraInterface):
                 int index: Ranges from 0:N-1 with N given by  '_get_number_hs_speeds'.
         @return: string error_msg: Information if function call was processed correctly.
         """
-        error_msg = self.dll.SetHSSpeed(c_int(typ), c_int(index))
-        return ERROR_DICT[error_msg]
+        error_code = self.dll.SetHSSpeed(c_int(typ), c_int(index))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('could not set the horizontal readout speed: {0}'.format(ERROR_DICT[error_code]))
+            return ERROR_DICT[error_code]
+
+        self._horizontal_readout_index = index
+        return ERROR_DICT[error_code]
 
     def _set_vs_speed(self, index):
         """
@@ -672,8 +630,44 @@ class IxonUltra(Base, CameraInterface):
         @param: int index: Ranges from 0:N-1 with N given by  '_get_number_vs_speeds'.
         @return: string error_msg: Information if function call was processed correctly.
         """
-        error_msg = self.dll.SetVSSpeed(c_int(index))
-        return ERROR_DICT[error_msg]
+        error_code = self.dll.SetVSSpeed(c_int(index))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('could not set the vertical readout speed: {0}'.format(ERROR_DICT[error_code]))
+            return ERROR_DICT[error_code]
+
+        self._vertical_readout_index = index
+        return ERROR_DICT[error_code]
+
+    #TODO test
+    def _set_emccd_gain(self, gain):
+        """
+        @param gain: Valid range depends on the gain mode -> _set_em_gain_mode
+        @return: int error_code {0:ok, -1: error}
+        """
+        gain = c_int(gain)
+        error_code = self.dll.SetEMCCDGain(gain)
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('could not set the emccd gain: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return 0
+
+    #TODO test
+    def _set_em_gain_mode(self, mode):
+        """
+        Set the EM Gain mode to one of the following possible settings.
+
+        @param int mode 0: The EM Gain is controlled by DAC settings in the range 0-255. Default mode.
+                        1: The EM Gain is controlled by DAC settings in the range 0-4095.
+                        2: Linear mode.
+                        3: Real EM gain
+        @return: error code: {0:Ok, -1:error}
+        """
+        mode = c_int(mode)
+        error_code = self.dll.SetEMGainMode(mode)
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('could not set the emccd gain: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return 0
 
 # getter functions
     def _get_status(self):
@@ -730,44 +724,6 @@ class IxonUltra(Base, CameraInterface):
             self.log.warning('unable to query acquisition timings: {0}'.format(ERROR_DICT[error_code]))
             return -1, -1, -1
         return self._exposure, self._accumulate, self._kinetic
-
-    def _get_oldest_image(self):
-        """ Return an array of last acquired image.
-
-        @return numpy array: image data in format [[row],[row]...]
-
-        Each pixel might be a float, integer or sub pixels
-        """
-
-        width = self._width
-        height = self._height
-
-        if self._read_mode == 'IMAGE':
-            if self._acquisition_mode == 'SINGLE_SCAN':
-                dim = width * height / self._hbin / self._vbin
-            elif self._acquisition_mode == 'KINETICS':
-                dim = width * height / self._hbin / self._vbin * self._scans
-        elif self._read_mode == 'SINGLE_TRACK' or self._read_mode == 'FVB':
-            if self._acquisition_mode == 'SINGLE_SCAN':
-                dim = width
-            elif self._acquisition_mode == 'KINETICS':
-                dim = width * self._scans
-
-        dim = int(dim)
-        image_array = np.zeros(dim)
-        cimage_array = c_int * dim
-        cimage = cimage_array()
-        error_code = self.dll.GetOldestImage(pointer(cimage), dim)
-        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            self.log.warning('Couldn\'t retrieve an image')
-        else:
-            self.log.debug('image length {0}'.format(len(cimage)))
-            for i in range(len(cimage)):
-                # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
-                image_array[i] = cimage[i]
-
-        image_array = np.reshape(image_array, (int(self._width/self._hbin), int(self._height/self._vbin)))
-        return image_array
 
     def _get_temperature(self):
         """
@@ -857,7 +813,7 @@ class IxonUltra(Base, CameraInterface):
 
         first_img = c_long(first_img)
         last_img = c_long(last_img)
-        size = c_ulong(width * height)
+        size = c_ulong(width * height * n_scans)
         val_first = c_long()
         val_last = c_long()
         error_code = self.dll.GetImages(first_img, last_img, pointer(cimage),
@@ -869,9 +825,46 @@ class IxonUltra(Base, CameraInterface):
                 # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
                 image_array[i] = cimage[i]
 
+        # remove baseline intrinsic to Andor iXon 897
+        image_array -= self._baseline
         self._cur_image = image_array
         return image_array
-# functions returning information about the camera used. (e.g. shift speed etc.)
+
+    def _get_c_images(self, first_img, last_img, n_scans):
+        """
+        Same as _get_images just it returns the c array
+        :param first_img:
+        :param last_img:
+        :param n_scans:
+        :return:
+        """
+        width = self._width
+        height = self._height
+
+        # first_img, last_img = self._get_number_new_images()
+        # n_scans = last_img - first_img
+        dim = width * height * n_scans
+
+        dim = int(dim)
+        image_array = np.zeros(dim)
+        cimage_array = c_int * dim
+        cimage = cimage_array()
+
+        first_img = c_long(first_img)
+        last_img = c_long(last_img)
+        size = c_ulong(width * height)
+        val_first = c_long()
+        val_last = c_long()
+        error_code = self.dll.GetImages(first_img, last_img, pointer(cimage),
+                                        size, byref(val_first), byref(val_last))
+
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('Couldn\'t retrieve an image. {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        else:
+            return cimage
+
+    # functions returning information about the camera used. (e.g. shift speed etc.)
 
     def _get_number_ad_channels(self):
         """
@@ -1045,6 +1038,79 @@ class IxonUltra(Base, CameraInterface):
             return -1
         return number.value
 
+    def _get_shiftspeed_dict(self, ori, amp=0, decimals=2):
+        """
+        Returns shift speeds like so: {id: freq (MHz)}, id is a the number corresponding to the shift
+        speed when setting the shift speed with andors function like SetHSSpeed or SetVSSpeed
+        ori: str 'hor' | 'ver'
+        amp: int 0: return available shiftspeeds with EM amplifier
+                 1: return availabe shiiftspeeds with conventional amplifier
+                 _: error
+        verbose: bool
+
+        """
+        if ori == 'hor':
+            shift_speeds_hor = {}
+            for ii, speed in enumerate(self._get_available_hs_speeds(amp)):
+                shift_speeds_hor[ii] = np.round(speed, decimals=decimals)
+            if self._verbose:
+                self.log.debug('shift speeds horizontal (index, speed (MHz)): {0}'.format(shift_speeds_hor))
+            return shift_speeds_hor
+
+        elif ori == 'ver':
+            shift_speeds_ver = {}
+            for ii, speed in enumerate(self._get_available_vs_speeds()):
+                shift_speeds_ver[ii] = np.round(speed, decimals=decimals)
+            if self._verbose:
+                self.log.debug('shift speeds vertical (index, speed (MHz)): {0}'.format(shift_speeds_ver))
+            return shift_speeds_ver
+        else:
+            self.log.warning('no correct identifier for the shiftspeed given')
+            return -1
+
+    def _get_head_model(self):
+        name = c_char_p()
+        error_code = self.dll.GetHeadModel(byref(name))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query sensitivity: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return name
+
+    def _get_qe(self, wave_length):
+        qe = c_float()
+        wave_length = c_float(wave_length)
+        sensor = self._get_head_model()
+        error_code = self.dll.GetQE(byref(sensor), wave_length, c_uint(0), byref(qe))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query sensitivity: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+
+        return qe.value
+
+    def _get_sensitivity(self):
+        """
+        This function returns the sensitivity of the camera given the current settings
+        @return: float sensitivity: if return value is larger than 0 operation is ok otherwise error.
+        """
+        channel = c_int(self._output_amplifier)
+        index = c_int(self._horizontal_readout_index)
+        amplifier = c_int(self._output_amplifier)
+        pa = c_int(self._preamp_gain_index)
+        sensitivity = c_float()
+        error_code = self.dll.GetSensitivity(channel, index, amplifier, pa, byref(sensitivity))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query sensitivity: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+        return sensitivity.value
+
+    def _get_emccd_gain(self):
+        gain = c_int()
+        error_code = self.dll.GetEMCCDGain(byref(gain))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('unable to query EMCCD gain: {0}'.format(ERROR_DICT[error_code]))
+            return -1
+
+        return gain.value
     # Unstable
     def _is_pre_amp_gain_available(self, amplifier, index, preamp):
         """
@@ -1062,4 +1128,41 @@ class IxonUltra(Base, CameraInterface):
                              ' speed: {0}'.format(ERROR_DICT[error_code]))
             return -1
         return status.value
+
+    #TODO: function is working but not sure what to make of the output
+    def _post_process_count_convert(self, input_image, num_images, mode):
+        """
+        @param input_image:
+        @param num_images:
+        @param baseline:
+        @param int mode: 1 - electrons / 2 - photons
+        @return:
+        """
+        sensitivity = c_float(self._get_sensitivity())
+        baseline = c_int(self._baseline)
+        mode = c_int(mode)
+        nv_peak_emission_nm = 670
+        qe = c_float(self._get_qe(nv_peak_emission_nm))
+        height = c_int(self._height)
+        width = c_int(self._width)
+        # initialize output image
+        dim = self._height * self._width * num_images
+        c_out_image_array = c_int * dim
+        c_out_image = c_out_image_array()
+        em_gain = c_int(self._get_emccd_gain())
+
+        output_buffer_size = c_int(self._width * self._height * num_images)
+
+        error_code = self.dll.PostProcessCountConvert(input_image, c_out_image, output_buffer_size,
+                                                      num_images, baseline, mode, em_gain, qe, sensitivity,
+                                                      height, width)
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.warning('Could not convert the counts:{}'.format(ERROR_DICT[error_code]))
+
+        image_array = np.zeros(dim)
+        for i in range(len(c_out_image)):
+            # could be problematic for 'FVB' or 'SINGLE_TRACK' readmode
+            image_array[i] = c_out_image[i]
+
+        return image_array
 # non interface functions regarding setpoint interface
