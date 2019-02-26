@@ -137,6 +137,8 @@ class RedCRABGui(GUIBase):
         self._parameters.add_parameter_pushButton.clicked.connect(self.add_parameter)
         self._parameters.del_parameter_pushButton.clicked.connect(self.delete_parameter)
 
+        self._ms.create_config_pushButton.clicked.connect(self._create_config)
+
         # Load variables
         self._load_main_settings_variables()
         self._load_pulses()
