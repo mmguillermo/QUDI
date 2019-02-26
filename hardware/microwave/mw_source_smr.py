@@ -41,6 +41,14 @@ class MicrowaveSMR(Base, MicrowaveInterface):
     GPIB connection through visa, please have a look at:
 
     http://cdn.rohde-schwarz.com/pws/dl_downloads/dl_common_library/dl_manuals/gb_1/s/smr_1/smr_20-40.pdf
+
+    Example config for copy-paste:
+
+    mw_source_smr:
+        module.Class: 'microwave.mw_source_smr.MicrowaveSMR'
+        gpib_address: 'GPIB0::28::INSTR'
+        gpib_timeout: 10
+
     """
 
     _modclass = 'MicrowaveSMR'
@@ -204,11 +212,11 @@ class MicrowaveSMR(Base, MicrowaveInterface):
         mode, dummy = self.get_status()
 
         if 'list' in mode:
-            pow_list = self._ask(':LIST:POW?').strip().split(',')
+            power_list = self._ask(':LIST:POW?').strip().split(',')
 
             # THIS AMBIGUITY IN THE RETURN VALUE TYPE IS NOT GOOD AT ALL!!!
             #FIXME: Correct that as soon as possible in the interface!!!
-            return np.array([float(pow) for pow in pow_list])
+            return np.array([float(power) for power in power_list])
 
         else:
             return float(self._ask(':POW?'))

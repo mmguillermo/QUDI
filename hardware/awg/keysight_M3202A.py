@@ -46,6 +46,12 @@ from interface.pulser_interface import PulserInterface, PulserConstraints
 class M3202A(Base, PulserInterface):
     """ Qudi module for the Keysight M3202A PXIe AWG card (1GHz sampling frequency)
 
+    Example config for copy-paste:
+
+    keysight_m3202a:
+        module.Class: 'awg.keysight_M3202A.M3202A'
+        awg_serial: 0000000000 # here the serial number of current AWG
+
     """
     _modclass = 'M3202A'
     _modtype = 'hardware'
@@ -70,7 +76,7 @@ class M3202A(Base, PulserInterface):
         # uploaded waveforms, waveform name -> instrument wfm number
         self.written_waveforms = {}
 
-        self.cfg = {
+        self.chcfg = {
             'a_ch1': M3202ChannelCfg(),
             'a_ch2': M3202ChannelCfg(),
             'a_ch3': M3202ChannelCfg(),
@@ -218,8 +224,12 @@ class M3202A(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self.log.debug('StartMultiple {}'.format(self.awg.AWGstartMultiple(0b1111)))
-        return 0
+        if self.last_sequence is None:
+            self.log.error('This AWG only supports sequences. Please put the waveform in a sequence and then load it.')
+            return -1
+        else:
+            self.log.debug('StartMultiple {}'.format(self.awg.AWGstartMultiple(0b1111)))
+            return 0
 
     def pulser_off(self):
         """ Switches the pulsing device off.
@@ -598,8 +608,7 @@ class M3202A(Base, PulserInterface):
                 self.awg.AWGqueueConfig(self.__ch_map[a_ch], 1)))
             self.log.debug('channelAmpliude {}'.format(
                 self.awg.channelAmplitude(self.__ch_map[a_ch], self.analog_amplitudes[a_ch])))
-            self.log.debug('QueueSyncMode {}'.format(
-                self.awg.AWGqueueSyncMode(self.__ch_map[a_ch], ksd1.SD_SyncModes.SYNC_CLK10)))
+
 
         if num_steps == steps_written:
             self.last_sequence = name
@@ -687,7 +696,7 @@ class M3202A(Base, PulserInterface):
         """
         return True
 
-    def _fast_newFromArrayDouble(self,wfm, waveformType, waveformDataA, waveformDataB=None):
+    def _fast_newFromArrayDouble(self, wfm, waveformType, waveformDataA, waveformDataB=None):
         """ Reimplement newArrayFromDouble() for numpy arrays for massive speed gains.
         Original signature:
         int SD_Wave::newFromArrayDouble(
@@ -703,11 +712,11 @@ class M3202A(Base, PulserInterface):
         c_double_p = ctypes.POINTER(ctypes.c_double)
         if len(waveformDataA) > 0 and (waveformDataB is None or len(waveformDataA) == len(waveformDataB)):
             if isinstance(waveformDataA, np.ndarray):
-                print(type(waveformDataA), waveformDataA.dtype)
+                # print(type(waveformDataA), waveformDataA.dtype)
                 waveform_dataA_C = waveformDataA.ctypes.data_as(c_double_p)
                 length = len(waveformDataA)
             else:
-                waveform_dataA_C = (ctypes.c_double * len(waveformDataA))(*waveformDataA);
+                waveform_dataA_C = (ctypes.c_double * len(waveformDataA))(*waveformDataA)
                 length = waveform_dataA_C._length_
 
             if waveformDataB is None:
@@ -738,42 +747,44 @@ class M3202A(Base, PulserInterface):
                 err, ksd1.SD_Error.getErrorMessage(err)))
 
         for ch in active_channels:
-            if self.cfg[ch].enable_trigger:
+            if self.chcfg[ch].enable_trigger:
                 trig_err = self.awg.AWGtriggerExternalConfig(
                     self.__ch_map[ch],
-                    self.cfg[ch].trig_source,
-                    self.cfg[ch].trig_behaviour,
-                    self.cfg[ch].trig_sync
+                    self.chcfg[ch].trig_source,
+                    self.chcfg[ch].trig_behaviour,
+                    self.chcfg[ch].trig_sync
                 )
                 self.log.info('Trig: Ch{} src: {} beh: {} sync: {}'.format(
                     self.__ch_map[ch],
-                    self.cfg[ch].trig_source,
-                    self.cfg[ch].trig_behaviour,
-                    self.cfg[ch].trig_sync,
+                    self.chcfg[ch].trig_source,
+                    self.chcfg[ch].trig_behaviour,
+                    self.chcfg[ch].trig_sync,
                     trig_err
                 ))
 
             mark_err = self.awg.AWGqueueMarkerConfig(
                 self.__ch_map[ch],
-                self.cfg[ch].mark_mode,
-                self.cfg[ch].mark_pxi,
-                self.cfg[ch].mark_io,
-                self.cfg[ch].mark_value,
-                self.cfg[ch].mark_sync,
-                self.cfg[ch].mark_length,
-                self.cfg[ch].mark_delay
+                self.chcfg[ch].mark_mode,
+                self.chcfg[ch].mark_pxi,
+                self.chcfg[ch].mark_io,
+                self.chcfg[ch].mark_value,
+                self.chcfg[ch].mark_sync,
+                self.chcfg[ch].mark_length,
+                self.chcfg[ch].mark_delay
             )
             self.log.info('Ch {} mm: {} pxi: {} io: {} val: {}, sync: {} len: {} delay: {} err: {}'.format(
                 self.__ch_map[ch],
-                self.cfg[ch].mark_mode,
-                self.cfg[ch].mark_pxi,
-                self.cfg[ch].mark_io,
-                self.cfg[ch].mark_value,
-                self.cfg[ch].mark_sync,
-                self.cfg[ch].mark_length,
-                self.cfg[ch].mark_delay,
+                self.chcfg[ch].mark_mode,
+                self.chcfg[ch].mark_pxi,
+                self.chcfg[ch].mark_io,
+                self.chcfg[ch].mark_value,
+                self.chcfg[ch].mark_sync,
+                self.chcfg[ch].mark_length,
+                self.chcfg[ch].mark_delay,
                 mark_err
                 ))
+            self.log.debug('QueueSyncMode {}'.format(
+                self.awg.AWGqueueSyncMode(self.__ch_map[ch], self.chcfg[ch].queue_sync)))
 
     def sync_clock(self):
         err = self.awg.clockResetPhase(1, 0, 0.0)
@@ -798,3 +809,5 @@ class M3202ChannelCfg:
         self.mark_value = 1
         self.mark_length = 10
         self.mark_delay = 0
+
+        self.queue_sync = ksd1.SD_SyncModes.SYNC_CLK10

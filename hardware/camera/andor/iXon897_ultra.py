@@ -40,12 +40,14 @@ class ReadMode(Enum):
     SINGLE_TRACK = 3
     IMAGE = 4
 
+
 class AcquisitionMode(Enum):
     SINGLE_SCAN = 1
     ACCUMULATE = 2
     KINETICS = 3
     FAST_KINETICS = 4
     RUN_TILL_ABORT = 5
+
 
 class TriggerMode(Enum):
     INTERNAL = 0
@@ -54,6 +56,7 @@ class TriggerMode(Enum):
     EXTERNAL_EXPOSURE = 7
     SOFTWARE_TRIGGER = 10
     EXTERNAL_CHARGE_SHIFTING = 12
+
 
 ERROR_DICT = {
     20001: "DRV_ERROR_CODES",
@@ -97,22 +100,34 @@ ERROR_DICT = {
     20992: "DRV_NOT_AVAILABLE"
 }
 
+
 class IxonUltra(Base, CameraInterface):
-    """
-    Hardware class for Andors Ixon Ultra 897
+    """ Hardware class for Andors Ixon Ultra 897
+
+    Example config for copy-paste:
+
+    andor_ultra_camera:
+        module.Class: 'camera.andor.iXon897_ultra.IxonUltra'
+        dll_location: 'C:\\camera\\andor.dll' # path to library file
+        default_exposure: 1.0
+        default_read_mode: 'IMAGE'
+        default_temperature: -70
+        default_cooler_on: True
+        default_acquisition_mode: 'SINGLE_SCAN'
+        default_trigger_mode: 'INTERNAL'
+
     """
 
     _modtype = 'camera'
     _modclass = 'hardware'
 
+    _dll_location = ConfigOption('dll_location', missing='error')
     _default_exposure = ConfigOption('default_exposure', 1.0)
     _default_read_mode = ConfigOption('default_read_mode', 'IMAGE')
     _default_temperature = ConfigOption('default_temperature', -70)
     _default_cooler_on = ConfigOption('default_cooler_on', True)
     _default_acquisition_mode = ConfigOption('default_acquisition_mode', 'SINGLE_SCAN')
     _default_trigger_mode = ConfigOption('default_trigger_mode', 'INTERNAL')
-    _dll_location = ConfigOption('dll_location', missing='error')
-
 
     _exposure = _default_exposure
     _temperature = _default_temperature
@@ -390,7 +405,7 @@ class IxonUltra(Base, CameraInterface):
             images.append(img)
         self.log.debug('expected number of images:{0}'.format(length))
         self.log.debug('number of images acquired:{0}'.format(len(images)))
-        return np.array(images).transpose()
+        return False, np.array(images).transpose()
 
     def get_down_time(self):
         return self._exposure
@@ -561,7 +576,7 @@ class IxonUltra(Base, CameraInterface):
 
         return ERROR_DICT[error_code]
 
-    def _set_frame_transfer(self, bool):
+    def _set_frame_transfer(self, transfer_mode):
         acq_mode = self._acquisition_mode
 
         if (acq_mode == 'SINGLE_SCAN') | (acq_mode == 'KINETIC'):
@@ -569,10 +584,7 @@ class IxonUltra(Base, CameraInterface):
                            'mode \'SINGLE_SCAN\' or \'KINETIC\'.')
             return -1
         else:
-            if bool:
-                rtrn_val = self.dll.SetFrameTransferMode(1)
-            else:
-                rtrn_val = self.dll.SetFrameTransferMode(0)
+            rtrn_val = self.dll.SetFrameTransferMode(transfer_mode)
 
         if ERROR_DICT[rtrn_val] == 'DRV_SUCCESS':
             return 0
