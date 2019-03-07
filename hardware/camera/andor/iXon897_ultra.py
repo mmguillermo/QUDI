@@ -87,6 +87,11 @@ ERROR_DICT = {
     20075: "DRV_NOT_INITIALIZED",
     20076: "DRV_P5INVALID",
     20077: "DRV_P6INVALID",
+    20078: "DRV_INVALID_MODE",
+    20079: "DRV_INVALID_FILTER",
+    20080: "DRV_l2CERRORS",
+    20081: "DRV_DRV_l2CDEVNOTFOUND",
+    20082: "DRV_l2CTIMEOUT",
     20083: "P7_INVALID",
     20089: "DRV_USBERROR",
     20091: "DRV_NOT_SUPPORTED",
@@ -1140,6 +1145,11 @@ class IxonUltra(Base, CameraInterface):
             return -1
         return status.value
 
+    def _is_trigger_mode_available(self, mode):
+        trigger_mode = c_int(mode)
+        error_code = self.dll.IsTriggerModeAvailable(trigger_mode)
+        return ERROR_DICT[error_code]
+
     #TODO: function is working but not sure what to make of the output
     def _post_process_count_convert(self, input_image, num_images, mode):
         """
@@ -1177,3 +1187,4 @@ class IxonUltra(Base, CameraInterface):
 
         return image_array
 # non interface functions regarding setpoint interface
+
