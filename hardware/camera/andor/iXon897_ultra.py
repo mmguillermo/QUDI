@@ -563,12 +563,12 @@ class IxonUltra(Base, CameraInterface):
         """
         Function to set the acquisition mode.
         Available modes:
-            1 Single Scan
-            2 Accumulate
-            3 Kinetics
-            4 Fast Kinetics
-            5 Run till abort
-        @param string mode: e.g. 'Single Scan'
+            SINGLE_SCAN
+            ACCUMULATE
+            KINETICS
+            FAST_KINETICS
+            RUN_TILL_ABORT
+        @param string mode: e.g. 'SINGLE_SCAN'
         @return int check_val: {0: ok, -1: error}
         """
         check_val = 0
@@ -636,6 +636,7 @@ class IxonUltra(Base, CameraInterface):
             self.log.error('could not set the horizontal readout speed: {0}'.format(ERROR_DICT[error_code]))
             return ERROR_DICT[error_code]
 
+        self._horizontal_readout_speed = self._get_hs_speed(self._output_amplifier, index)
         self._horizontal_readout_index = index
         return ERROR_DICT[error_code]
 
@@ -651,6 +652,7 @@ class IxonUltra(Base, CameraInterface):
             self.log.error('could not set the vertical readout speed: {0}'.format(ERROR_DICT[error_code]))
             return ERROR_DICT[error_code]
 
+        self._vertical_readout_speed = self._get_vs_speed(index)
         self._vertical_readout_index = index
         return ERROR_DICT[error_code]
 
@@ -684,6 +686,56 @@ class IxonUltra(Base, CameraInterface):
             self.log.error('could not set the emccd gain: {0}'.format(ERROR_DICT[error_code]))
             return -1
         return 0
+
+    def _set_number_accumulations(self, num):
+        """
+        This function will set the number of scans accumulated in memory. This will only take
+        effect if the acquisition mode is either Accumulate or Kinetic Series.
+
+        @param int num: number of scans accumulated in memory
+        @return: string error_msg: Information if function call was processed correctly.
+        """
+        c_num = c_int(num)
+        rtrn_val = self.dll.SetNumberAccumulations(c_num)
+        return ERROR_DICT[rtrn_val]
+
+    def _set_accumulation_cycle_time(self, time):
+        """
+        This function will set the accumulation cycle time to the nearest valid value not less than
+        the given value. The actual cycle time used is obtained by _get_acquisition_timings.
+        (works only with internal trigger)
+
+        @param float time: the accumulation cycle time
+        @return: string error_msg: Information if function call was processed correctly.
+        """
+        c_time = c_float(time)
+        rtrn_val = self.dll.SetAccumulationCycleTime(c_time)
+        return ERROR_DICT[rtrn_val]
+
+    def _set_number_kinetics(self, num):
+        """
+        This function will set the number of scans (possibly accumulated scans) to be taken
+        during a single acquisition sequence. This will only take effect if the acquisition mode is
+        Kinetic Series.
+
+        @param int num: the number of scans
+        @return: string error_msg: Information if function call was processed correctly.
+        """
+        c_num = c_int(num)
+        rtrn_val = self.dll.SetNumberKinetics(c_num)
+        return ERROR_DICT[rtrn_val]
+
+    def _set_kinetic_cycle_time(self, time):
+        """
+        This function will set the kinetic cycle time to the nearest valid value not less than the
+        given value. The actual time used is obtained by _get_acquisition_timings.
+
+        @param time:
+        @return: string error_msg: Information if function call was processed correctly.
+        """
+        c_time = c_float(time)
+        rtrn_val = self.dll.SetKineticCycleTime(c_time)
+        return ERROR_DICT[rtrn_val]
 
 # getter functions
     def _get_status(self):
