@@ -438,6 +438,14 @@ class IxonUltra(Base, CameraInterface):
 
     def _set_read_mode(self, mode):
         """
+        This function will set the readout mode to be used on the subsequent acquisitions.
+        Available Readout modes:
+            FVB
+            MULTI_TRACK
+            RANDOM_TRACK
+            SINGLE_TRACK
+            IMAGE
+
         @param string mode: string corresponding to certain ReadMode
         @return string answer from the camera
         """
@@ -465,12 +473,12 @@ class IxonUltra(Base, CameraInterface):
         This function will set the trigger mode that the camera will operate in.
 
         Available trigger modes:
-        0. Internal
-        1. External
-        6. External Start
-        7. External Exposure (Bulb)
-        9. External FVB EM (only valid for EM Newton models in FVB mode)
-        10. Software Trigger
+            INTERNAL
+            EXTERNAL
+            EXTERNAL_START
+            EXTERNAL_EXPOSURE
+            SOFTWARE_TRIGGER
+            EXTERNAL_CHARGE_SHIFTING
 
         @param string mode: string corresponding to certain TriggerMode (e.g. 'Internal')
         @return string: Errormessage from the camera
@@ -655,6 +663,20 @@ class IxonUltra(Base, CameraInterface):
         self._vertical_readout_speed = self._get_vs_speed(index)
         self._vertical_readout_index = index
         return ERROR_DICT[error_code]
+
+    def _set_fast_ext_trigger(self, mode):
+        """
+        This function will enable fast external triggering. When fast external triggering is enabled
+        the system will NOT wait until a “Keep Clean” cycle has been completed before
+        accepting the next trigger. This setting will only have an effect if the trigger mode has
+        been set to External via SetTriggerMode.
+
+        @param int mode: 0 Disabled, 1 Enabled
+        @return: string error_msg: Information if function call was processed correctly.
+        """
+        c_mode = c_int(mode)
+        rtrn_val = self.dll.SetFastExtTrigger(c_mode)
+        return ERROR_DICT[rtrn_val]
 
     #TODO test
     def _set_emccd_gain(self, gain):
@@ -1179,6 +1201,9 @@ class IxonUltra(Base, CameraInterface):
             return -1
 
         return gain.value
+
+    def _get_capabilities(self):
+        pass
     # Unstable
     def _is_pre_amp_gain_available(self, amplifier, index, preamp):
         """
@@ -1198,8 +1223,26 @@ class IxonUltra(Base, CameraInterface):
         return status.value
 
     def _is_trigger_mode_available(self, mode):
-        trigger_mode = c_int(mode)
-        error_code = self.dll.IsTriggerModeAvailable(trigger_mode)
+        """
+        This function checks if the hardware and current settings permit the use of the specified
+        trigger mode.
+
+        Available Trigger modes:
+            INTERNAL
+            EXTERNAL
+            EXTERNAL_START
+            EXTERNAL_EXPOSURE
+            SOFTWARE_TRIGGER
+            EXTERNAL_CHARGE_SHIFTING
+
+        @param str mode: the trigger mode to query
+        @return: str err_msg: information if trigger mode is available or not
+        """
+        if hasattr(TriggerMode, mode):
+            n_mode = getattr(TriggerMode, mode).value
+            n_mode = c_int(n_mode)
+            error_code = self.dll.IsTriggerModeAvailable(n_mode)
+
         return ERROR_DICT[error_code]
 
     #TODO: function is working but not sure what to make of the output
