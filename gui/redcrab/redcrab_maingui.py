@@ -47,6 +47,16 @@ class RedCRABMainWindow(QtWidgets.QMainWindow):
         self.show()
 
 
+class InitiationTab(QtWidgets.QWidget):
+    def __init__(self):
+        # Get the path to the *.ui file
+        this_dir = os.path.dirname(__file__)
+        ui_file = os.path.join(this_dir, 'ui_initiate_tab.ui')
+        # Load it
+        super().__init__()
+        uic.loadUi(ui_file, self)
+
+
 class MainSettingsTab(QtWidgets.QWidget):
     def __init__(self):
         # Get the path to the *.ui file
@@ -116,10 +126,12 @@ class RedCRABGui(GUIBase):
         self._ms = MainSettingsTab()
         self._pulses = PulsesTab()
         self._parameters = ParametersTab()
+        self._initiation = InitiationTab()
 
         self._mw.tabWidget.addTab(self._ms, 'Main Settings')
         self._mw.tabWidget.addTab(self._pulses, 'Pulses')
         self._mw.tabWidget.addTab(self._parameters, 'Parameters')
+        self._mw.tabWidget.addTab(self._initiation, 'Optimization')
 
         self._pulse_option_modules = []
         self._parameter_option_modules = []
@@ -138,6 +150,8 @@ class RedCRABGui(GUIBase):
         self._parameters.del_parameter_pushButton.clicked.connect(self.delete_parameter)
 
         self._ms.create_config_pushButton.clicked.connect(self._create_config)
+
+        self._initiation.pset_path_ushButton.clicked.connect(self.select_file)
 
         # Load variables
         self._load_main_settings_variables()
@@ -187,6 +201,9 @@ class RedCRABGui(GUIBase):
         for parameter_ui in self._parameter_option_modules:
             parameter_ui.init_para_avail_checkBox.stateChanged.connect(self.toggle_para_value)
             parameter_ui.reasonable_para_var_checkBox.stateChanged.connect(self.toggle_para_variation)
+
+    def select_file(self):
+        self._initiation.path_lineEdit.setText(QtWidgets.QFileDialog.getExistingDirectory())
 
     def toggle_variable_time_options(self):
         if self._ms.variable_T_checkBox.isChecked():

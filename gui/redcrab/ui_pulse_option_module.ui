@@ -73,7 +73,14 @@
         </widget>
        </item>
        <item>
-        <widget class="QDoubleSpinBox" name="amp_limit_low_doubleSpinBox"/>
+        <widget class="QDoubleSpinBox" name="amp_limit_low_doubleSpinBox">
+         <property name="minimum">
+          <double>-999999999.000000000000000</double>
+         </property>
+         <property name="maximum">
+          <double>999999999.000000000000000</double>
+         </property>
+        </widget>
        </item>
        <item>
         <widget class="QLabel" name="label_3">

@@ -2,18 +2,18 @@
 
 STARTPHYSPARS
 TT := 1.0000000000
-Nt := 0
+Nt := 100
 ENDPHYSPARS
 
 STARTALGPARS
 FomFactor2Maximization := 1.0000000000
-MaxNumSI := 0
-MaxFunctEvSI1 := 0
-MaxFunctEvSI22n := 0
+MaxNumSI := 3
+MaxFunctEvSI1 := 100
+MaxFunctEvSI22n := 40
 StdAvailable := 0
 GuessPulsesAvailable := 0
 IsPureParaOpti := 0
-IndividualOutput := 0
+IndividualOutput := 1
 ENDALGPARS
 
 STARTFLAGS
@@ -93,6 +93,21 @@ ENDFLAGGED
 ENDPULSE
 
 -----Parameter1-----
+
+STARTPARAMETER
+
+STARTPHYSPARS
+ParaLimits := [0.0000000000, 1.0000000000]
+ENDPHYSPARS
+
+STARTFLAGS
+InitParaAvail := 0
+ReasonableParaVar := 0
+ENDFLAGS
+
+ENDPARAMETER
+
+-----Parameter2-----
 
 STARTPARAMETER
 

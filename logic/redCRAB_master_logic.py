@@ -440,7 +440,8 @@ class RedCRABMasterLogic(GenericLogic):
         if flag_dict['NumericScalingFnctAvail']:
             append_txt(file, 'STARTFLAGGED')
             if len(pulse.contr_ampl_time_numeric) is not self.number_of_time_steps:
-                self.log.warning('Numeric scaling function not of correct length (should be same as number of time steps)')
+                self.log.warning('Numeric scaling function not of correct length (should be same as number '
+                                 'of time steps)')
                 self.log.warning('ContrAmplTime set to 1 for all times')
                 append_list(file, 'ContrAmplTime', [1] * self.number_of_time_steps)
             else:
