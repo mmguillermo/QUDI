@@ -1281,6 +1281,79 @@ class PredefinedGeneratorBase:
                     phase_3=phases[2])
         return mw_element
 
+    def _get_pi_X_pulse_element(self, length, freq=None, phase=None, voltage=None, Time_2_pi=None,
+                                max_voltage=None):
+        """
+        Creates a pi_X pulse PulseBlockElement
+
+        @param float length: MW pulse duration in seconds
+        @param float freq: MW frequency in case of analogue MW channel in Hz
+        @param float amp: MW amplitude in case of analogue MW channel in V
+        @param float phase: MW phase in case of analogue MW channel in deg
+
+        @return: PulseBlockElement, the generated MW element
+        """
+        if self.microwave_channel.startswith('d'):
+            mw_element = self._get_trigger_element(
+                length=length,
+                increment=0,
+                channels=self.microwave_channel)
+        else:
+            # from enum import Enum
+            #
+            # class Area(Enum):
+            #     pi_half = 1
+            #     pi = 2
+            #     pi_three_half = 3
+
+            mw_element = self._get_idle_element(
+                length=length,
+                increment=0)
+            mw_element.pulse_function[self.microwave_channel] = SamplingFunctions.Pi_X_Pulse(
+                frequency=freq,
+                phase=phase,
+                voltage=voltage,
+                Time_2_pi=Time_2_pi,
+                max_voltage=max_voltage)
+        return mw_element
+
+    def _get_optimal_control_pulse_element(self, length, file_name=None, freq=None, phase=None, voltage=None,
+                                           Time_2_pi=None, max_voltage=None):
+        """
+        Creates a pi_X pulse PulseBlockElement
+
+        @param float length: MW pulse duration in seconds
+        @param float freq: MW frequency in case of analogue MW channel in Hz
+        @param float amp: MW amplitude in case of analogue MW channel in V
+        @param float phase: MW phase in case of analogue MW channel in deg
+
+        @return: PulseBlockElement, the generated MW element
+        """
+        if self.microwave_channel.startswith('d'):
+            mw_element = self._get_trigger_element(
+                length=length,
+                increment=0,
+                channels=self.microwave_channel)
+        else:
+            # from enum import Enum
+            #
+            # class Area(Enum):
+            #     pi_half = 1
+            #     pi = 2
+            #     pi_three_half = 3
+
+            mw_element = self._get_idle_element(
+                length=length,
+                increment=0)
+            mw_element.pulse_function[self.microwave_channel] = SamplingFunctions.Opt_Control(
+                name=file_name,
+                frequency=freq,
+                phase=phase,
+                voltage=voltage,
+                Time_2_pi=Time_2_pi,
+                max_voltage=max_voltage)
+        return mw_element
+
     def _get_mw_laser_element(self, length, increment, amp=None, freq=None, phase=None):
         """
 
