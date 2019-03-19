@@ -40,12 +40,19 @@ class ReadMode(Enum):
     SINGLE_TRACK = 3
     IMAGE = 4
 
+
 class AcquisitionMode(Enum):
     SINGLE_SCAN = 1
     ACCUMULATE = 2
     KINETICS = 3
     FAST_KINETICS = 4
     RUN_TILL_ABORT = 5
+
+
+class OutputAmplifier(Enum):
+    EM = 0
+    CONVENTIONAL = 1
+
 
 class TriggerMode(Enum):
     INTERNAL = 0
@@ -56,50 +63,86 @@ class TriggerMode(Enum):
     EXTERNAL_CHARGE_SHIFTING = 12
 
 ERROR_DICT = {
-    20001: "DRV_ERROR_CODES",
-    20002: "DRV_SUCCESS",
-    20003: "DRV_VXNOTINSTALLED",
-    20006: "DRV_ERROR_FILELOAD",
-    20007: "DRV_ERROR_VXD_INIT",
-    20010: "DRV_ERROR_PAGELOCK",
-    20011: "DRV_ERROR_PAGE_UNLOCK",
-    20013: "DRV_ERROR_ACK",
-    20024: "DRV_NO_NEW_DATA",
-    20026: "DRV_SPOOLERROR",
-    20034: "DRV_TEMP_OFF",
-    20035: "DRV_TEMP_NOT_STABILIZED",
-    20036: "DRV_TEMP_STABILIZED",
-    20037: "DRV_TEMP_NOT_REACHED",
-    20038: "DRV_TEMP_OUT_RANGE",
-    20039: "DRV_TEMP_NOT_SUPPORTED",
-    20040: "DRV_TEMP_DRIFT",
-    20050: "DRV_COF_NOTLOADED",
-    20053: "DRV_FLEXERROR",
-    20066: "DRV_P1INVALID",
-    20067: "DRV_P2INVALID",
-    20068: "DRV_P3INVALID",
-    20069: "DRV_P4INVALID",
-    20070: "DRV_INIERROR",
-    20071: "DRV_COERROR",
-    20072: "DRV_ACQUIRING",
-    20073: "DRV_IDLE",
-    20074: "DRV_TEMPCYCLE",
-    20075: "DRV_NOT_INITIALIZED",
-    20076: "DRV_P5INVALID",
-    20077: "DRV_P6INVALID",
-    20078: "DRV_INVALID_MODE",
-    20079: "DRV_INVALID_FILTER",
-    20080: "DRV_l2CERRORS",
-    20081: "DRV_DRV_l2CDEVNOTFOUND",
-    20082: "DRV_l2CTIMEOUT",
-    20083: "P7_INVALID",
-    20089: "DRV_USBERROR",
-    20091: "DRV_NOT_SUPPORTED",
-    20095: "DRV_INVALID_TRIGGER_MODE",
-    20099: "DRV_BINNING_ERROR",
-    20990: "DRV_NOCAMERA",
-    20991: "DRV_NOT_SUPPORTED",
-    20992: "DRV_NOT_AVAILABLE"
+     20001: 'DRV_ERROR_CODES',
+     20002: 'DRV_SUCCESS',
+     20003: 'DRV_VXDNOTINSTALLED',
+     20004: 'DRV_ERROR_SCAN',
+     20005: 'DRV_ERROR_CHECK_SUM',
+     20006: 'DRV_ERROR_FILELOAD',
+     20007: 'DRV_UNKNOWN_FUNCTION',
+     20008: 'DRV_ERROR_VXD_INIT',
+     20009: 'DRV_ERROR_ADDRESS',
+     20010: 'DRV_ERROR_PAGELOCK',
+     20011: 'DRV_ERROR_PAGE_UNLOCK',
+     20012: 'DRV_ERROR_BOARDTEST',
+     20013: 'DRV_ERROR_ACK',
+     20014: 'DRV_ERROR_UP_FIFO',
+     20015: 'DRV_ERROR_PATTERN',
+     20017: 'DRV_ACQUISITION_ERRORS',
+     20018: 'DRV_ACQ_BUFFER',
+     20019: 'DRV_ACQ_DOWNFIFO_FULL',
+     20020: 'DRV_PROC_UNKNOWN_INSTRUCTION',
+     20021: 'DRV_ILLEGAL_OP_CODE',
+     20022: 'DRV_KINETIC_TIME_NOT_MET',
+     20023: 'DRV_ACCUM_TIME_NOT_MET',
+     20024: 'DRV_NO_NEW_DATA',
+     20026: 'DRV_SPOOLERROR',
+     20033: 'DRV_TEMPERATURE_CODES',
+     20034: 'DRV_TEMPERATURE_OFF',
+     20035: 'DRV_TEMPERATURE_NOT_STABILIZED',
+     20036: 'DRV_TEMPERATURE_STABILIZED',
+     20037: 'DRV_TEMPERATURE_NOT_REACHED',
+     20038: 'DRV_TEMPERATURE_OUT_RANGE',
+     20039: 'DRV_TEMPERATURE_NOT_SUPPORTED',
+     20040: 'DRV_TEMPERATURE_DRIFT',
+     20049: 'DRV_GENERAL_ERRORS',
+     20050: 'DRV_INVALID_AUX',
+     20051: 'DRV_COF_NOTLOADED',
+     20052: 'DRV_FPGAPROG',
+     20053: 'DRV_FLEXERROR',
+     20054: 'DRV_GPIBERROR',
+     20064: 'DRV_DATATYPE',
+     20065: 'DRV_DRIVER_ERRORS',
+     20066: 'DRV_P1INVALID',
+     20067: 'DRV_P2INVALID',
+     20068: 'DRV_P3INVALID',
+     20069: 'DRV_P4INVALID',
+     20070: 'DRV_INIERROR',
+     20071: 'DRV_COFERROR',
+     20072: 'DRV_ACQUIRING',
+     20073: 'DRV_IDLE',
+     20074: 'DRV_TEMPCYCLE',
+     20075: 'DRV_NOT_INITIALIZED',
+     20076: 'DRV_P5INVALID',
+     20077: 'DRV_P6INVALID',
+     20078: 'DRV_INVALID_MODE',
+     20079: 'DRV_INVALID_FILTER',
+     20080: 'DRV_I2CERRORS',
+     20081: 'DRV_DRV_I2CDEVNOTFOUND',
+     20082: 'DRV_I2CTIMEOUT',
+     20083: 'DRV_P7INVALID',
+     20089: 'DRV_USBERROR',
+     20090: 'DRV_IOCERROR',
+     20091: 'DRV_NOT_SUPPORTED',
+     20093: 'DRV_USB_INTERRUPT_ENDPOINT_ERROR',
+     20094: 'DRV_RANDOM_TRACK_ERROR',
+     20095: 'DRV_INVALID_TRIGGER_MODE',
+     20096: 'DRV_LOAD_FIRMWARE_ERROR',
+     20097: 'DRV_DIVIDE_BY_ZERO_ERROR',
+     20098: 'DRV_INVALID_RINGEXPOSURES',
+     20099: 'DRV_BINNING_ERROR',
+     20100: 'DRV_INVALID_AMPLIFIER',
+     20115: 'DRV_ERROR_MAP',
+     20116: 'DRV_ERROR_UNMAP',
+     20117: 'DRV_ERROR_MDL',
+     20118: 'DRV_ERROR_UNMDL',
+     20119: 'DRV_ERROR_BUFFSIZE',
+     20121: 'DRV_ERROR_NOHANDLE',
+     20130: 'DRV_GATING_NOT_AVAILABLE',
+     20131: 'DRV_FPGA_VOLTAGE_ERROR',
+     20990: 'DRV_ERROR_NOCAMERA',
+     20991: 'DRV_NOT_SUPPORTED',
+     20992: 'DRV_NOT_AVAILABLE'
 }
 
 class IxonUltra(Base, CameraInterface):
@@ -133,7 +176,7 @@ class IxonUltra(Base, CameraInterface):
     _default_horizontal_readout_index = ConfigOption('default_horizontal_readout_index', 0)
     _default_vertical_readout_index = ConfigOption('default_vertical_readout_index', 4)
     # 0: EM amplifier 1: Conventional amplifier
-    _default_output_amplifier = ConfigOption('default_output_amplifier', 1)
+    _default_output_amplifier = ConfigOption('default_output_amplifier', 'CONVENTIONAL')
     _dll_location = ConfigOption('dll_location', missing='error')
 
     _exposure = _default_exposure
@@ -531,10 +574,19 @@ class IxonUltra(Base, CameraInterface):
     def _set_output_amplifier(self, typ):
         """
         This function allows to set the output amplifier.
-        @param c_int typ: 0: EMCCD gain, 1: Conventional CCD register
+        @param str typ: 'EM' or 'CONVENTIONAL'
         @return string: error message
         """
-        error_code = self.dll.SetOutputAmplifier(typ)
+        if hasattr(OutputAmplifier, typ):
+            n_typ = c_int(getattr(OutputAmplifier, typ).value)
+            error_code = self.dll.SetOutputAmplifier(n_typ)
+        else:
+            self.log.error('{0} output_amplifier is not supported'.format(typ))
+
+        if ERROR_DICT[error_code] == 'DRV_SUCCESS':
+            self._output_amplifier = typ
+        else:
+            self.log.error('setting output amplifer failed {}'.format(ERROR_DICT[error_code]))
         return ERROR_DICT[error_code]
 
     def _set_preamp_gain(self, index):
@@ -635,10 +687,11 @@ class IxonUltra(Base, CameraInterface):
         """
         Set the horizontal shift speed. To get the number of available shift speeds use '_get_number_hs_speeds'.
         Corresponding to the index find out the shift frequencies with '_get_hs_speed'.
-        @param: int typ: 0 for EM amplifier and 1 for conventional amplifier
+        @param: str typ: 'EM' for EM amplifier and 'CONVENTIONAL' for conventional amplifier
                 int index: Ranges from 0:N-1 with N given by  '_get_number_hs_speeds'.
         @return: string error_msg: Information if function call was processed correctly.
         """
+        typ = getattr(OutputAmplifier, typ).value
         error_code = self.dll.SetHSSpeed(c_int(typ), c_int(index))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             self.log.error('could not set the horizontal readout speed: {0}'.format(ERROR_DICT[error_code]))
@@ -678,7 +731,6 @@ class IxonUltra(Base, CameraInterface):
         rtrn_val = self.dll.SetFastExtTrigger(c_mode)
         return ERROR_DICT[rtrn_val]
 
-    #TODO test
     def _set_emccd_gain(self, gain):
         """
         @param gain: Valid range depends on the gain mode -> _set_em_gain_mode
@@ -691,7 +743,6 @@ class IxonUltra(Base, CameraInterface):
             return -1
         return 0
 
-    #TODO test
     def _set_em_gain_mode(self, mode):
         """
         Set the EM Gain mode to one of the following possible settings.
@@ -1016,11 +1067,12 @@ class IxonUltra(Base, CameraInterface):
         As your Andor SDK system is capable of operating at more than one horizontal shift speed
         this function will return the actual number of speeds available.
 
-        @param: int typ: allowed values: 0: electron multiplication
-                                         1: conventional
+        @param: str typ: allowed values: 'EM': electron multiplication
+                                         'CONVENTIONAL': conventional amplifier
 
         @return: int speeds: number of speeds available
         """
+        typ = getattr(OutputAmplifier, typ).value
         channel, typ, speeds = c_int(self._get_number_ad_channels() - 1), c_int(typ), c_int()
         error_code = self.dll.GetNumberHSSpeeds(channel, typ, byref(speeds))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
@@ -1034,13 +1086,14 @@ class IxonUltra(Base, CameraInterface):
         """
         Return horizontal shift speed for given AD channel, amplifier configuration.
 
-        @param: int typ: allowed values: 0: electron multiplication
-                                         1: conventional
+        @param: str typ: allowed values: 'EM': electron multiplication
+                                         'CONVENTIONAL': conventional amplifier
                 int index: specifies the speed for a given index out of the available once
                            returned by '_get_number_hs_speeds'
 
         @return float speed:  speed in MHz
         """
+        typ = getattr(OutputAmplifier, typ).value
         channel, typ, index = c_int(self._get_number_ad_channels() - 1), c_int(typ), c_int(index)
         speed = c_float()
         error_code = self.dll.GetHSSpeed(channel, typ, index, byref(speed))
@@ -1053,8 +1106,8 @@ class IxonUltra(Base, CameraInterface):
     def _get_available_hs_speeds(self, typ):
         """
         Convenience function returning the available horizontal readout speeds
-        @param: int typ: allowed values: 0: electron multiplication
-                                         1: conventional
+        @param: str typ: allowed values: 'EM': electron multiplication
+                                         'CONVENTIONAL': conventional amplifier
         @return list hs_speeds: available horizontal readout speeds in MHz
         """
         hs_freqs = [self._get_hs_speed(typ, i) for i in range(self._get_number_hs_speeds(typ))]
@@ -1182,25 +1235,41 @@ class IxonUltra(Base, CameraInterface):
         This function returns the sensitivity of the camera given the current settings
         @return: float sensitivity: if return value is larger than 0 operation is ok otherwise error.
         """
-        channel = c_int(self._output_amplifier)
+        amp = getattr(self._output_amplifier).value
+        channel = c_int(amp)
         index = c_int(self._horizontal_readout_index)
         amplifier = c_int(self._output_amplifier)
         pa = c_int(self._preamp_gain_index)
         sensitivity = c_float()
         error_code = self.dll.GetSensitivity(channel, index, amplifier, pa, byref(sensitivity))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            self.log.warning('unable to query sensitivity: {0}'.format(ERROR_DICT[error_code]))
+            self.log.error('unable to query sensitivity: {0}'.format(ERROR_DICT[error_code]))
             return -1
         return sensitivity.value
 
     def _get_emccd_gain(self):
+        """
+        Returns the current gain setting. The meaning of the value returned depends on the EM
+        Gain mode.
+        @return: int gain: current EM gain setting
+        """
         gain = c_int()
         error_code = self.dll.GetEMCCDGain(byref(gain))
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
-            self.log.warning('unable to query EMCCD gain: {0}'.format(ERROR_DICT[error_code]))
-            return -1
-
+            self.log.error('unable to query EMCCD gain: {0}'.format(ERROR_DICT[error_code]))
         return gain.value
+
+    def _get_em_gain_range(self):
+        """
+        Returns the minimum and maximum values of the current selected EM Gain mode and
+        temperature of the sensor.
+        @return: tuple (int low, int high): min and max value that can be set for the current em gain mode
+        """
+        c_low, c_high = c_int(), c_int()
+        error_code = self.dll.GetEMGainRange(byref(c_low), byref(c_high))
+        if ERROR_DICT[error_code] != 'DRV_SUCCESS':
+            self.log.error('unable to query EMCCD gain range: {0}'.format(ERROR_DICT[error_code]))
+        return c_low.value, c_high.value
 
     def _get_capabilities(self):
         pass
@@ -1242,6 +1311,21 @@ class IxonUltra(Base, CameraInterface):
             n_mode = getattr(TriggerMode, mode).value
             n_mode = c_int(n_mode)
             error_code = self.dll.IsTriggerModeAvailable(n_mode)
+
+        return ERROR_DICT[error_code]
+
+    def _is_amplifier_available(self, amp):
+        """
+        This function checks if the hardware and current settings permit the use of the specified
+        amplifier.
+
+        @param: str amp: 'EM' or 'CONVENTIONAL'
+        @return str msg:  DRV_SUCCESS, DRV_NOT_INITIALIZED, DRV_INVALID_AMPLIFIER
+        """
+        if hasattr(OutputAmplifier, amp):
+            n_amp = getattr(OutputAmplifier, amp).value
+            n_amp = c_int(n_amp)
+        error_code = self.dll.IsAmplifierAvailable(n_amp)
 
         return ERROR_DICT[error_code]
 
