@@ -24,7 +24,8 @@ import numpy as np
 import time
 from core.module import Base, ConfigOption
 from interface.camera_interface import CameraInterface
-
+from PIL import Image
+import matplotlib.image as mpimg
 
 class CameraDummy(Base, CameraInterface):
     """ Dummy hardware for camera interface
@@ -45,8 +46,9 @@ class CameraDummy(Base, CameraInterface):
 
     _support_live = ConfigOption('support_live', True)
     _camera_name = ConfigOption('camera_name', 'Dummy camera')
-    _resolution = ConfigOption('resolution', (1280, 720))  # High-definition !
-
+    _resolution = ConfigOption('resolution', (1280, 900))  # High-definition !
+    _dummy_acquisition = ConfigOption('Dummy Acquisition', 'image')
+    _resources = '1200px-Atomium_de_Bruxelles.jpg'
     _live = False
     _acquiring = False
     _exposure = ConfigOption('exposure', .1)
@@ -121,8 +123,20 @@ class CameraDummy(Base, CameraInterface):
 
         Each pixel might be a float, integer or sub pixels
         """
-        data = np.random.random(self._resolution)*self._exposure*self._gain
-        return data.transpose()
+        data = np.zeros(self._resolution)
+        if self._dummy_acquisition == 'random':
+            data = np.random.random(self._resolution)*self._exposure*self._gain
+        elif self._dummy_acquisition == 'image':
+            # to be implemented
+            im = Image.open(self._resources)
+            im = im.resize(self._resolution)
+            im = im.rotate(180)
+            im = im.convert('L') #convert to gray scale
+            data = mpimg.pil_to_array(im)
+        elif self._dummy_acquisition == 'image_stack':
+            # to be implememtned
+            data +=1
+        return data
 
     def set_exposure(self, exposure):
         """ Set the exposure time in seconds
