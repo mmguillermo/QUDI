@@ -176,8 +176,10 @@ class IxonUltra(Base, CameraInterface):
     _default_horizontal_readout_index = ConfigOption('default_horizontal_readout_index', 0)
     _default_vertical_readout_index = ConfigOption('default_vertical_readout_index', 4)
     # 0: EM amplifier 1: Conventional amplifier
-    _default_output_amplifier = ConfigOption('default_output_amplifier', 'CONVENTIONAL')
+    _default_output_amplifier = ConfigOption('default_output_amplifier', 'EM')
     _dll_location = ConfigOption('dll_location', missing='error')
+    _default_em_gain_mode = ConfigOption('default_em_gain_mode', 3)
+    _default_em_gain = ConfigOption('default_em_gain', 3)
 
     _exposure = _default_exposure
     _temperature = _default_temperature
@@ -188,14 +190,14 @@ class IxonUltra(Base, CameraInterface):
     _preamp_gain_index = _default_preamp_gain_index
     _horizontal_readout_index = _default_horizontal_readout_index
     _vertical_readout_index = _default_vertical_readout_index
-    #TODO horizontal readout speed depends on output amplifier, therefore should ensure that only valid pairings
-    #     are chosen
     _output_amplifier = _default_output_amplifier
+    _em_gain_mode = _default_em_gain_mode
+    _em_gain = _default_em_gain
     _gain = 0
     _width = 0
     _height = 0
     _last_acquisition_mode = None  # useful if config changes during acq
-    _supported_read_mode = ReadMode # TODO: read this from camera, all readmodes are available for iXon Ultra
+    _supported_read_mode = ReadMode
     _min_temperature = -100
     _live = False
     _camera_name = 'iXon Ultra 897'
@@ -222,6 +224,9 @@ class IxonUltra(Base, CameraInterface):
         self._set_output_amplifier(self._output_amplifier)
         self._set_hs_speed(self._output_amplifier, self._horizontal_readout_index)
         self._set_vs_speed(self._vertical_readout_index)
+        if self._output_amplifier == 'EM':
+            self._set_em_gain_mode(self._default_em_gain_mode)
+            self._set_emccd_gain(self._default_em_gain)
 
 
     def on_deactivate(self):
@@ -741,7 +746,9 @@ class IxonUltra(Base, CameraInterface):
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             self.log.error('could not set the emccd gain: {0}'.format(ERROR_DICT[error_code]))
             return -1
-        return 0
+        else:
+            self._em_gain = gain
+            return 0
 
     def _set_em_gain_mode(self, mode):
         """
@@ -758,7 +765,9 @@ class IxonUltra(Base, CameraInterface):
         if ERROR_DICT[error_code] != 'DRV_SUCCESS':
             self.log.error('could not set the emccd gain: {0}'.format(ERROR_DICT[error_code]))
             return -1
-        return 0
+        else:
+            self._em_gain_mode = mode
+            return 0
 
     def _set_number_accumulations(self, num):
         """
