@@ -37,6 +37,7 @@ import numpy as np
 
 import time
 
+
 class CameraSettingDialog(QtWidgets.QDialog):
     """ Create the SettingsDialog window, based on the corresponding *.ui file."""
 
@@ -81,9 +82,17 @@ class CameraGUI(GUIBase):
     sigImageStop = QtCore.Signal()
 
     _image = []
+    _selected_region_image = []
+    _roi_dict = {}
+    raw_data_image = []
 
     _logic = None
     _mw = None
+    # _roi_types = {'LineROI': pg.LineROI, 'MultiRectROI': pg.MultiRectROI, 'EllipseROI': pg.EllipseROI,
+    #               'CircleROI': pg.CircleROI, 'PolyLineROI': pg.PolyLineROI}
+
+    _roi_types = ['RectROI', 'LineROI', 'MultiRectROI', 'EllipseROI', 'CircleROI', 'PolyLineROI']
+    _default_roi = 'CircleROI'
 
     def __init__(self, config, **kwargs):
 
@@ -126,17 +135,25 @@ class CameraGUI(GUIBase):
         self._sd.rejected.connect(self.keep_former_settings)
         self._sd.exposureDSpinBox.setValue(self._logic._exposure)
         self._sd.gainSpinBox.setValue(self._logic._gain)
-        self._sd.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(
-            self.update_settings)
+        self._sd.buttonBox.button(QtWidgets.QDialogButtonBox.Apply).clicked.connect(self.update_settings)
+        self._sd.roi_ComboBox.addItems(self._roi_types)
         self.keep_former_settings()
         # connect save action to save function
         self._mw.actionSave_XY_Scan.triggered.connect(self.save_xy_scan_data)
 
-        raw_data_image = self._logic.get_last_image()
-        self._image = pg.ImageItem(image=raw_data_image, axisOrder='row-major')
+        self.raw_data_image = self._logic.get_last_image()
+        self._image = pg.ImageItem(image=self.raw_data_image, axisOrder='row-major')
         self._mw.image_PlotWidget.addItem(self._image)
         self._mw.image_PlotWidget.setAspectLocked(True)
+        self._selected_region_image = pg.ImageItem()
+        self._mw.selected_region_PlotWidget.addItem(self._selected_region_image)
 
+        # add rotation handle to image
+        r4 = pg.ROI([0, 0], [self.raw_data_image.shape[1], self.raw_data_image.shape[0]], removable=True)
+        r4.addRotateHandle([1, 0], [0.5, 0.5])
+        r4.addRotateHandle([0, 1], [0.5, 0.5])
+        self._mw.image_PlotWidget.addItem(r4)
+        self._image.setParentItem(r4)
         # Get the colorscale and set the LUTs
         self.my_colors = ColorScaleInferno()
 
@@ -158,6 +175,25 @@ class CameraGUI(GUIBase):
         self._mw.xy_cb_ViewWidget.hideAxis('bottom')
         self._mw.xy_cb_ViewWidget.setLabel('left', 'Fluorescence', units='c')
         self._mw.xy_cb_ViewWidget.setMouseEnabled(x=False, y=False)
+
+        # create rois
+        rois = []
+        rois.append(pg.RectROI([20, 20], [20, 20], pen=(0, 9)))
+        rois[-1].addRotateHandle([1, 0], [0.5, 0.5])
+        rois.append(pg.LineROI([0, 60], [20, 80], width=5, pen=(1, 9)))
+        rois.append(pg.MultiRectROI([[20, 90], [50, 60], [60, 90]], width=5, pen=(2, 9)))
+        rois.append(pg.EllipseROI([60, 10], [30, 20], pen=(3, 9)))
+        rois.append(pg.CircleROI([80, 50], [20, 20], pen=(4, 9)))
+        # rois.append(pg.LineSegmentROI([[110, 50], [20, 20]], pen=(5,9)))
+        rois.append(pg.PolyLineROI([[80, 60], [90, 30], [60, 40]], pen=(6, 9), closed=True))
+        self._roi_dict = dict(zip(self._roi_types, rois))
+
+        # connect signals and add rois to the image
+
+        self._roi = self._roi_dict[self._default_roi]
+        self._roi.sigRegionChanged.connect(self.update_selected_region)
+        self._mw.image_PlotWidget.addItem(self._roi)
+        self.update_selected_region(self._roi)
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -192,6 +228,8 @@ class CameraGUI(GUIBase):
         """ Write new settings from the gui to the file. """
         self._logic.set_exposure(self._sd.exposureDSpinBox.value())
         self._logic.set_gain(self._sd.gainSpinBox.value())
+        self.create_roi(self._sd.roi_ComboBox.currentText())
+
 
     def keep_former_settings(self):
         """ Keep the old settings and restores them in the gui. """
@@ -230,9 +268,9 @@ class CameraGUI(GUIBase):
         """
         Get the image data from the logic and print it on the window
         """
-        raw_data_image = self._logic.get_last_image()
+        self.raw_data_image = self._logic.get_last_image()
         levels = (0., 1.)
-        self._image.setImage(image=raw_data_image)
+        self._image.setImage(image=self.raw_data_image)
         self.update_xy_cb_range()
         # self._image.setImage(image=raw_data_image, levels=levels)
 
@@ -242,7 +280,7 @@ class CameraGUI(GUIBase):
         """
         pass
 
-# color bar functions
+    # color bar functions
     def get_xy_cb_range(self):
         """ Determines the cb_min and cb_max values for the xy scan image
         """
@@ -307,7 +345,23 @@ class CameraGUI(GUIBase):
         self.refresh_xy_colorbar()
         self.refresh_xy_image()
 
-# save functions
+    def update_selected_region(self, roi):
+        self._selected_region_image.setImage(roi.getArrayRegion(self.raw_data_image,
+                                                                self._image), levels=(0, self.raw_data_image.max()))
+        self._mw.selected_region_PlotWidget.autoRange()
+
+    def create_roi(self, roi):
+        """
+        Every time the settings are changed a new roi is added and the old one removed
+        :param roi:
+        :return:
+        """
+        self._mw.image_PlotWidget.removeItem(self._roi)
+        self._mw.image_PlotWidget.addItem(self._roi_dict[roi])
+        self._roi = self._roi_dict[roi]
+        self._roi.sigRegionChanged.connect(self.update_selected_region)
+
+    # save functions
 
     def save_xy_scan_data(self):
         """ Run the save routine from the logic to save the xy confocal data."""
@@ -327,4 +381,3 @@ class CameraGUI(GUIBase):
         filename = filepath + os.sep + time.strftime('%Y%m%d-%H%M-%S_confocal_xy_scan_raw_pixel_image')
 
         self._image.save(filename + '_raw.png')
-
