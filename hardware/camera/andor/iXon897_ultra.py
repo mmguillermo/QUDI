@@ -819,6 +819,23 @@ class IxonUltra(Base, CameraInterface):
         rtrn_val = self.dll.SetKineticCycleTime(c_time)
         return ERROR_DICT[rtrn_val]
 
+    def _set_up_em_amp(self, gain, mode, speed_ind):
+        """
+        convenience function for setting up the em output
+        amplifier.
+        @param int gain: 3-300 for Real TM for example. See programming manual.
+        @param int mode: See function _set_em_gain_mode
+        @param int speed_ind: _set_hs_speed and check with _get_hs_speed to see the speed set.
+        @return: 0
+        """
+
+        self._set_output_amplifier('EM')
+        self._set_em_gain_mode(mode)
+        self._set_emccd_gain(gain)
+        self._set_hs_speed('EM', speed_ind)
+
+        return 0
+
 # getter functions
     def _get_status(self):
         """
