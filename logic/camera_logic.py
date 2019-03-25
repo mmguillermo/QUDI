@@ -78,6 +78,8 @@ class CameraLogic(GenericLogic):
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.loop)
 
+        self._last_image = np.zeros(self._hardware.get_size())
+
     def on_deactivate(self):
         """ Perform required deactivation. """
         pass
