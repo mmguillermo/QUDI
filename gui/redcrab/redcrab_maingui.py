@@ -633,6 +633,7 @@ class RedCRABGui(GUIBase):
     def _run_optimization(self):
         from shutil import copyfile, rmtree
         # self._create_files()
+        self._create_chopped()
         copyfile('RedCRAB/Cfg_5.txt', 'RedCRAB/Config/RedCRAB_config/Cfg_5.txt')
 
         try:

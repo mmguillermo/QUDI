@@ -1,6 +1,0 @@
-Figure of merit results from optimization:
-2019-03-28 12:00:13, SI=1, It_no=0, Feval_no=1, FOM=0.0
-2019-03-28 12:00:14, SI=1, It_no=0, Feval_no=2, FOM=0.05001820013652383
-2019-03-28 12:00:14, SI=1, It_no=0, Feval_no=3, FOM=0.054551991087855814
-2019-03-28 12:00:15, SI=1, It_no=0, Feval_no=4, FOM=0.026025202564364344
-2019-03-28 12:00:15, SI=1, It_no=0, Feval_no=5, FOM=0.03317066415979809

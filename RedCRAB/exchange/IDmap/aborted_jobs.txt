@@ -1,8 +1,0 @@
-Cfg_15415858712331.txt : error during config file read in
-Cfg_15536116755651.txt : error during initialization
-Cfg_15536117752861.txt : error during initialization
-Cfg_15536119229091.txt : error during initialization
-Cfg_15536143628361.txt : error during initialization
-Cfg_15536144109621.txt : error during initialization
-Cfg_15536147111791.txt : error during initialization
-Cfg_15536150155721.txt : error during initialization
