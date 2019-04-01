@@ -1,1 +1,0 @@
-https://mybinder.org/v2/gh/MatthiKrauss/qusco_school_2019_03_krotov_exercise/master
