@@ -1,0 +1,629 @@
+======================= DOCUMENTATION REDCRAB Cfg_#.txt FILE ===============================
+
+For Client Version: 	1.1
+Last Updated:		04.08.18
+
+CONTENTS:
+1.    GENERAL INTRODUCTION: THE STRUCTURE
+2.    INSIDE THE FILE
+2.1    Main Settings
+2.1.1   Physical Parameters
+2.1.2   Algebraic Parameters
+2.1.3   Possible Flags and Corresponding Blocks
+2.2    Pulse Options
+2.2.1   Physical Parameters
+2.2.2   Possible Flags and corresponding blocks
+2.3    Parameter Options
+2.3.1   Physical Parameters
+2.3.2   Possible Flags and corresponding blocks
+
+Notes: 	Any starred *parameters are optional but the star should be removed in the actual 
+	file.
+	FoM - Figure of Merit
+	RedCRAB - Remote dressedChopped RAndom Basis
+============================================================================================
+			1. GENERAL INTRODUCTION: THE STRUCTURE
+
+Whenever RedCRAB is run, a configuration (config) file is needed to adjust the settings of 
+the algorithm according to the simulation or experiment it is used with. In order for RedCRAB 
+to find it, it should be stored in the RedCRAB_Config folder on the local maschine. Its name 
+has to follow the layout Cfg_#.txt, where # is replaced by a number. Make sure the file is in 
+the folder before each run, as RedCRAB automatically deletes it after using it.
+
+The config file is composed of three parts:	- Main Settings
+						- Pulse Options
+						- Parameters Options
+
+Each of these components is defined through its physical parameters (PHYSPARS), 
+options which can be activated (FLAGS) and the values these options take in (FLAGGED). 
+If a flag is activated/deactivated, it is set to 1/0. If it is set to 1, 
+a corresponding FLAGGED block defines the features of the option. If it is set to 0, 
+however, no FLAGGED block is needed. The order of the FLAGS within a module does not
+matter, ahould however correspond to the order of the FLAGGED blocks should be the same. 
+
+The main settings also require algebraic parameters (ALGPARS) which do not change 
+throughout the calculation. The pulse and parameter options are delimited by STARTPULSE/
+ENDPULSE and STARTPARAMETER/ENDPARAMETER. Equivalently, each of the FLAGGED blocks begins 
+with STARTFLAGGED and ends with ENDFLAGGED.
+
+Below, the general structure of a valid config file is shown:
+----------------------------------------------
+-------------Main Settings--------------------
+STARTPHYSPARS
+TT := 1
+Nt := 101
+ENDPHYSPARS
+
+STARTALGPARS
+AlgPars1 := value
+AlgPars2 := value
+ENDALGPARS
+
+STARTFLAGS
+Flag1 := 1
+Flag2 := 0
+Flag3 := 1
+ENDFLAGS
+
+STARTFLAGGED
+Specification1Flag1 := value
+Specification2Flag1 := value
+ENDFLAGGED
+
+STARTFLAGGED
+Specification1Flag3 := value
+ENDFLAGGED
+
+-------------------Pulse----------------------
+STARTPULSE
+
+STARTPHYSPARS
+AmpLimits := [0,50]
+ENDPHYSPARS
+
+STARTFLAGS
+Flag1 := 1
+Flag2 := 0
+Flag3 := 1
+ENDFLAGS
+
+STARTFLAGGED
+Specification1Flag1 := value
+Specification2Flag1 := value
+ENDFLAGGED
+
+STARTFLAGGED
+Specification1Flag3 := value
+ENDFLAGGED
+
+
+ENDPULSE
+------------------Parameter-------------------
+STARTPARAMETER
+
+STARTPHYSPARS
+ParaLimits := [0.04,0.25]
+ENDPHYSPARS
+
+STARTFLAGS
+Flag1 := 1
+Flag2 := 0
+Flag3 := 1
+ENDFLAGS
+
+STARTFLAGGED
+Specification1Flag1 := value
+Specification2Flag1 := value
+ENDFLAGGED
+
+STARTFLAGGED
+Specification1Flag3 := value
+ENDFLAGGED
+
+ENDPARAMETER
+---------------------------------------------
+---------------------------------------------
+
+============================================================================================
+				2. INSIDE THE FILE
+
+____________________________________________________________________________________________
+				2.1 Main Settings
+
+The Main Settings determine everything that does not change throughout the optimisation.
+They are composed of the physical parameters (PHYSPARS), algebraic parameters (ALGPARS), 
+a set of options (FLAGS) and, if they are activated, their corresponding specifications
+(FLAGGED blocks). The order in which the options are listed does not matter.
+
+--------------------------------------------------------------------------------------------
+				2.1.1 Physical Parameters
+
+. . . . . . . . . . . . . . . . . . . . . VALUES . . . . . . . . . . . . . . . . . . . . . .
+
+TT (float)
+	Final value of the ramping time
+Nt (int)
+	Number of time steps
+
+. . . . . . . . . . . . . . . . . . . . . EXAMPLE . . . . . . . . . . . . . . . . . . . . .
+
+STARTPHYSPARS
+TT := 1
+Nt := 101
+ENDPHYSPARS
+
+--------------------------------------------------------------------------------------------
+				2.1.2 Algebraic Parameters
+
+. . . . . . . . . . . . . . . . . . . . . VALUES . . . . . . . . . . . . . . . . . . . . . .
+
+FomFactor2Maximization (x (float, x! = 0))
+	Scaling factor for the cost function, usually {-1,+1}.
+    	(-\infty <= x < 0) -> minimization
+    	(0 < x <= \infty ) -> maximization
+MaxNumSI (int)
+	Number of super-iterations to be performed. During each super iteration the FoM 
+	should visibly converge. The number of super iterations then determines the over 
+	all quality of the FoM. Try few (1-3) to start and adjust other factors to avoid 
+	long waiting times when setting up the config file for the first time.
+MaxFunctEvSI1 (int)
+	Number of Nelder Mead evaluations (iterations) during the first super-iteration.
+	This should be bigger than MaxFunctEvSI22n, as it is important to find a good first 
+	guess, when starting the algorithm. If this is too low, it might lead to RedCRAB 
+	needing more super-iterations before over all convergence.
+MaxFunctEvSI22n (int)
+	Number of Nelder Mead evaluations from the second super-iteration on. This should 
+	be high enough to lead to visible convergence of the FoM. Initially this should be 
+	set anywhere between 5-40 for simple and 40-150 for more complicated quantum 
+	systems.
+StdAvailable {0,1}
+    	0 No standard deviation available
+    	1 Standard deviation provided to use for FLAGSPECIFYREEVALSTEPS
+GuessPulsesAvailable {0,1}
+	0 No pulses are specified using an initial guess file
+	1 An initial guess file exists in the corresponding path (see FileGuessInput)
+*IsPureParaOpti {0,1}
+	If one chooses a custom or gaussian basis (BasisChoice), i.e. does not optimise the 
+	pulse frequency, then there is no use in super-iterations. Pure parametric 
+	optimisation should hence only be used for MaxFunctEvSI1 := 1.
+    	0 (Default) normal optimization
+    	1 only 1 super-iteration will be carried out
+*IndividualOutput {0,1}
+	This adjusts the pulse format in the userStats folder but NOT in the PulsePath folder
+	specified in the chopped file. To change the pulse format there, one should change 
+	SplitPulsesFile.
+	0 FoM and optimised pulse are recorded in a single file
+	1 (Default) FoM and optimised pulse are recorded in individual files for each 
+	  iteration
+
+. . . . . . . . . . . . . . . . . . . . . EXAMPLE . . . . . . . . . . . . . . . . . . . . .
+
+STARTALGPARS
+FomFactor2Maximization := -1
+MaxNumSI := 5
+MaxFunctEvSI1 := 25
+MaxFunctEvSI22n := 20
+StdAvailable := 1
+IsPureParaOpti := 0
+IndividualOutput := 1
+ENDALGPARS
+
+--------------------------------------------------------------------------------------------
+			2.1.3 Possible Flags and Corresponding Blocks
+
+All the flags given for the main settings are pulse and parameter independent. Each flag 
+has a corresponding set of variables given in the flagged block. Here, each flag is given 
+with its corresponding variables but in the config file, they are seperated as shown in the
+example at the end of this section.
+
+. . . . . . . . . . . . . . . . . . . . . VALUES . . . . . . . . . . . . . . . . . . . . . .
+
+FLAGVARIABLET
+	If the total time TT of the pulse should be optimised. The number of time steps 
+	always stays the same.
+	TTINT ([t1 (float),t2 (float)], t1 < t2)
+    		The length of the pulse may be varied between t1 and t2.
+FLAGASCIMPREXPECT
+    	Activates stopping criterion, which aborts the super-iteration, if FoM does not 
+	improve quickly enough.
+	ASCImprovementExpected (int)
+		If FoM does not improve within this number of iterations wrt the overall 
+		record, a new super-iteration is started.
+FLAGASCCLOSE
+    	Activates stopping criterion which aborts the super-iteration, if FoM does not seem 
+	to improve at all.
+	ASCCloseAfterRelDist ([N (int), p (float)], N < MaxFunctEvSI22n, 0 < p < 1)
+		If the FoM does not reach a result better than p times the record of the 
+		previous super-iteration within N iterations, a new super-iteration is 
+		started.
+FLAGSPECIFYREEVALSTEPS
+	Test whether the probability is sufficiently high that a new record is actually a 
+	new record and not just a statistical anomaly by repeating the FoM evaluation. 
+	Only works, if standard deviation is available i.e. saved in the FOMPath folder 
+	specified in the chopped.txt file.
+    	ReEvalSteps ([A_1,...,A_n] (list of floats))
+		(Default [0.5]) When the FoM is evaluated for a specific sequence, the 
+		algorithm calculates the probability P_1, for the current sequence 
+		outperforming the previous all time record. If P_1 > A_1, the measurement 
+		is repeated. If the average of the new and the previous FoM has a 
+		probability P_2 to be better than the all-time record and P_2 > A_2 the 
+		measurement is repeated again. This process is repeated until either P_i < 
+		A_i or until the end of the list. If it reaches the end, the sequence is 
+		reccorded as the new optimum, if P_i < A_i, it is not and a new iteration 
+		is started.
+		Recommended starting point: [0.33, 0.5, 0.501, 0.51]
+FLAGISREMOTE
+	Specify transmission method to the server. If this is flagged (and it should be, if 
+	one is using the server), unflag FLAGISNONEREMOTE.
+	TransmissionMethod {0,1}
+		0 server checks whether the message exchange file was updated
+		1 (Recommended) server checks whether a message exists, reads it and 
+		  deletes it
+FLAGISNONEREMOTE 
+	If RedCRAB is used without the server. (Should be switched off.) If FLAGISREMOTE:= 1,
+	the programme will automatically set this to 0.
+	ProgramType ('PythonModule')
+		Specifies that RedCRAB is run from a python module on the local machine
+		defined in FLAGNAMEPYMOD.
+*FLAGNAMEPYMOD 
+	If a python module should be imported (only in case FLAGISNONEREMOTE is activated).
+	NamePythonModule (string)
+		name of python module
+
+. . . . . . . . . . . . . . . . . . . . . EXAMPLE . . . . . . . . . . . . . . . . . . . . .
+
+STARTFLAGS
+FLAGVARIABLET := 1
+FLAGASCIMPREXPECT := 1
+FLAGASCCLOSE := 1
+FLAGSPECIFYREEVALSTEPS := 1
+FLAGISREMOTE := 1
+FLAGISNONEREMOTE := 0
+ENDFLAGS
+
+STARTFLAGGED
+TTINT := [1,5]
+ENDFLAGGED
+
+STARTFLAGGED
+ASCImprovementExpected := 20
+ENDFLAGGED
+
+STARTFLAGGED
+ASCCloseAfterRelDist := [18,0.12]
+ENDFLAGGED
+
+STARTFLAGGED
+ReEvalSteps := [0.33,0.5,0.501,0.51]
+ENDFLAGGED
+
+STARTFLAGGED
+TransmissionMethod := 1
+ENDFLAGGED
+
+____________________________________________________________________________________________
+				2.2 Pulse Options
+
+A pulse describes one variable that is altered during the time TT to lead to an optimal 
+FoM. One may define multiple pulses corresponding to one variable each. For example, to 
+control a laser, Pulse 1 could correspond to amplitude and pulse 2 to detuning. All pulses 
+are then optimised in parallel, which means they can have different properties but RedCRAB 
+will always output sequences of numbers describing their silmultaneous evolution. 
+Concerning the syntax, all specifications should be contained within:
+
+STARTPULSE
+...
+ENDPULSE
+
+--------------------------------------------------------------------------------------------
+				2.2.1 Physical Parameters
+
+. . . . . . . . . . . . . . . . . . . . . VALUES . . . . . . . . . . . . . . . . . . . . . .
+
+AmpLimits ([x1 (float),x2 (float)])
+	Defines the amplitude limits of the defined variable between x1 and x2.
+
+. . . . . . . . . . . . . . . . . . . . . EXAMPLE . . . . . . . . . . . . . . . . . . . . .
+
+STARTPULSE
+
+STARTPHYSPARS
+AmpLimits := [0,35]
+ENDPHYSPARS
+...
+
+--------------------------------------------------------------------------------------------
+			2.2.2 Possible Flags and Corresponding Blocks
+
+The flags correspond to "switches" which enable the client to customise certain settings in 
+the flagged blocks. Here, each flag is given with an explanation and its corresponding 
+variables. Note that flags and flagged blocks are seperated in the config file as shown in 
+the example at the end of this section.
+
+Lambda Functions:
+This class within the config file lets the client specify functions f.e. to define a custom 
+basis. It generally takes the form:
+'lambda argument1,argument2,...: insert_function'
+All constants and functions must be defined according to the numpy library i.e. pi becomes 
+np.pi and atan() becomes np.arctan(). If time is one of the arguments it should be the first 
+argument. Examples can be found throughout this section.
+
+. . . . . . . . . . . . . . . . . . . . . VALUES . . . . . . . . . . . . . . . . . . . . . .
+
+*ReasonableAmplVar
+	Set the start simplex. If not flagged, the step size is set to (x2-x1)/10 (as in
+	AmpLimits).
+	AmplVar (float)
+		Adjusts step size for the start simplex. The scale is afterwards adjusted 
+		to the chosen basis.
+
+SelectBasis
+	Allows to select a basis.
+    	BasisChoice {'fourier', 'tschebyschow', 'gaussian', 'custom'}
+
+		'fourier'  u = A sin(2 pi w t/TT) + B cos(2 pi w t/TT)
+		(Recommended) The varied parameters for each iteration are A and B. AmplVar/
+		sqrt(2) determines the initial scaling of A and B. The freqency w is set 
+		for each start simplex and its range can be chosen by activating 
+		FrequencyRange. If the number of pulses is < 3, the option exists to add a 
+		second frequency by activating SelectBasisF2.
+
+		'tschebyschow' u = A cos(w arccos(-1+3x10^(-16)+2(1-3*10^(-16))t/TT) + B)
+		The varied parameters for each iteration are A and B. AmplVar determines
+		the initial scaling of A. The freqency w is set for each start simplex and
+		its range can be chosen by activating FrequencyRange.
+
+		'gaussian' u = A exp(-((t/TT-B)/C)^2)
+		The varied parameters for each iteration are the height A, width B and 
+		shift C of a Gaussian curve. AmplVar determines how strongly the height 
+		of the Gaussian is scaled during the start simplex, the starting scales for
+		B and C are set by the algorithm. The option of using a linear combination of 
+		Gaussians can be activated through the flag NumGaussians. NOTE! This basis 
+		does not exploit the advantage of the super-iterations in RedCRAB, as it is 
+		NOT frequency dependent.
+
+		'custom'
+		Set by the client by also using CustomParamization in this block. Cannot 
+		include a frequency that is changed with super-iteration.
+
+	*CustomParametrization (lambda function)
+		Basis with arguments that are altered in each iteration by the algorithm. 
+		The start simplex is determined by the constraints that must be given under
+ 		ParametricConstraints.
+		Example: 'lambda t,x,y,z: x*(1+t/y)**(-z)'
+
+*NumGaussians
+	Creates a superposition of Gaussians. Hence creates 3 extra parameters to be 
+	optimised.
+	NumGauss {1,2}
+		1 single Gaussian
+		2 superposition of two Gaussians
+
+*SelectBasisF2
+	Use two frequency components for Fourier basis. Only available if the number of 
+	pulses < 3. Hence creates 2 extra parameters to be optimised. No flagged blocks.
+
+*FrequencyRange
+	Set the range of frequencies considered in the optimisation.
+	FreqRange ([f1 (float), f2 (float)])
+		(Default [0.5, 25.0]) Sets range between f1 and f2. Might be limited by 
+		experimental setup.
+
+*FrequencyRangeF2
+	Set the second range of frequencies considered in the optimisation.
+	FreqRange2 ([f1 (float), f2 (float)])
+		(Default [0.5, 25.0]) Sets range between f1 and f2. Might be limited by 
+		experimental setup.
+
+*ParametricConstraints
+	Set parameter constraints for a custom basis used to create the start simplex. All 
+	the parameters defined under CustomParameterization should be mentioned here.
+	parameter# ([g (float), v (float)])
+		Set the initial guess g and variation v or parameter number #.
+
+	Example of flagged block corresponding to CustomParameterization i.e. (x = 
+	parameter1, y = parameter2, z = parameter3):
+
+    	STARTFLAGGED
+    	parameter1 := [1,0.7]
+    	parameter2 := [3, 0.2]
+    	parameter3 := [0.5, 0.1]
+    	ENDFLAGGED
+
+*FreqSelectDistr
+	Select a specific distribution for the randomly selected frequencies.
+	Wdistr {[1], [2, m, s], ['acustom'], ['ncustom']}
+		[1]         (Default) uniform distribution within FrequencyRange
+		[2, m, s]   lognormal distribution with mean value m and sigma s
+		['acustom'] analytical distribution set by the client by adjusting Function 
+			    and Nbins in this block
+		['ncustom'] numerical distribution set by the client by adjusting NumProb 
+			    in this block
+	*Function (lambda function)
+		For 'acustom' the PDF is defined and will later be normalised.
+        *Nbins (int)
+		For 'acustom': Number of devisions within the frequency range. Each 
+		bin is assigned a probability according to the PDF. PDF gets normalised
+		automatically.
+	*NumProb ([P_1,...,P_n] list of floats)
+		For 'ncustom' the frequency range is divided in n divisions, where each 
+		division i is assigned the respective probability P_i. (n = dimension of 
+		NumProb array)
+
+	Examples:
+    	- Flagged block for an analytical distribution
+
+        STARTFLAGGED
+        Wdistr := ['acustom']
+        Function := 'lambda x: np.exp(-x**2)'
+        Nbins := 100
+        ENDFLAGGED
+
+	- Flagged block for a numerical distribution:
+
+        STARTFLAGGED
+        Wdistr := ['ncustom']
+        NumProb := [0.005, 0.05, 0.65557, 0.223, 0.5536, 0.9384738, 1.552, 0.998, 0.227]
+        ENDFLAGGED
+
+
+*FreqSelectDistr2 
+	Exactly the same as above but only for SelectBasisF2 := 1.
+
+# The following flags allow to add inital guesses and restricting parameters corresponding to 
+# physical assumptions. They can be used to implement boundary conditions or define a general 
+# shape. For example, one may consider a scaling function that ramps up to include a zero 
+# boundary codition at t=0.
+# One way of shaping the pulse is to apply an analytical or numerical time dependent scaling 
+# function f_sc, such that
+# u_{crabsc} = u_{crab} * f_sc,
+# where u_{crab} refers to the sequence of length Nt optimised by RedCRAB. The sequence can be 
+# individualised even further by applying an initial guess, consequently leading to u_{total}, 
+# the pulse handed over to the client.
+
+
+*AnalyticScalingFnctAvail
+	Set an analytical scaling funtion which multiplies u_{crab}. This option is only 
+	available, if NumericScalingFnctAvail := 0.
+	ContrAmplTime (lambda function)
+		Specifies the analytical scaling function.
+
+*NumericScalingFnctAvail
+	Set a numerical scaling funtion which multiplies u_{crab}. This option is only 
+	available, if AnalyticScalingFnctAvail := 0.
+    	ContrAmplTime ([S_1,...,S_Nt] list of floats)
+		The dimension of the list must be Nt i.e. the dimension of the sequence. 
+
+*InitGuessAvail
+	Set an inital guess. If actvated, either AnalyticGuessInput or NumericGuessInput 
+	should also be flagged.
+	GuessScaleType {'abs', 'rel', 'multiply'}
+		Corresponds to three different ways of adding the initial guess funtion  
+		u_{init} to u_{crabsc} to get the final output u_{total}.
+    		'abs':      u_{total} = u_{crabsc} + u_{init}
+    		'rel':      u_{total} = u_{init} * ( 1 + u_{crabsc} )
+    		'multiply': u_{total} = u_{crabsc} * u_{init}
+
+*AnalyticGuessInput
+	Set an analytical initial guess. Should be flagged with InitGuessAvail.
+	ContrAmplTime (lambda function)
+		Specifies the analytical function of the initial guess.
+
+*NumericGuessInput
+	Set a numerical initial guess. Should be flagged with InitGuessAvail.
+    	ContrAmplTime ([I_1,...,I_Nt] list of floats)
+		The dimension of the list must be Nt i.e. the dimension of the sequence. 
+
+*FileGuessInput
+	Set a numerical initial guess specified in a file located in the RedCRAB_Client folder 
+	under GuessPulses/GuessPulses.txt . Should be flagged with InitGuessAvail in the pulse 
+	and GuessPulsesAvailable in the main settings. The first column should specify the 
+	time steps and any following columns the corresponding pulses. The dimension of the list
+	in the file must be Nt i.e. the dimension of the sequence and the total time should also
+	be the same as specified by TT in the main settings.
+    	ColNr (int)
+		Defines which column in the file describes the initial guess for this pulse. 
+		0 corresponds to the second column (i.e. the column following the time steps).
+
+
+. . . . . . . . . . . . . . . . . . . . . EXAMPLE . . . . . . . . . . . . . . . . . . . . .
+
+...
+STARTFLAGS
+ReasonableAmplVar := 1
+SelectBasis := 1
+ParametricConstraints := 0
+FrequencyRange := 1
+FreqSelectDistr := 1
+AnalyticScalingFnctAvail := 1
+NumericScalingFnctAvail := 0
+AnalyticGuessInput := 1
+NumericGuessInput := 0
+InitGuessAvail := 1
+ENDFLAGS
+
+STARTFLAGGED
+AmplVar := 0.2
+ENDFLAGGED
+
+STARTFLAGGED
+BasisChoice := 'fourier'
+ENDFLAGGED
+
+STARTFLAGGED
+FreqRange := [0.3,1]
+ENDFLAGGED
+
+STARTFLAGGED
+Wdistr := [1]
+ENDFLAGGED
+
+STARTFLAGGED
+ContrAmplTime := 'lambda t: -(31.8/5.0)*(t-5.0) + 0.2'
+ENDFLAGGED
+
+STARTFLAGGED
+ContrAmplTime := 'lambda t: 32*np.exp(-t)'
+ENDFLAGGED
+
+STARTFLAGGED
+GuessScaleType := 'abs'
+ENDFLAGGED
+
+ENDPULSE
+
+____________________________________________________________________________________________
+				2.3 Parameter Options
+
+Parameters can be altered from iteration to iteration but are kept constant throughout TT.
+
+--------------------------------------------------------------------------------------------
+				2.3.1 Physical Parameters
+
+. . . . . . . . . . . . . . . . . . . . . VALUES . . . . . . . . . . . . . . . . . . . . . .
+
+ParaLimits ([x1 (float),x2 (float)])
+	Defines the range of the parameters between x1 and x2.
+
+. . . . . . . . . . . . . . . . . . . . . EXAMPLE . . . . . . . . . . . . . . . . . . . . .
+
+STARTPARAMETER
+
+STARTPHYSPARS
+ParaLimits := [0.04,0.25]
+ENDPHYSPARS
+...
+
+--------------------------------------------------------------------------------------------
+			2.3.2 Possible Flags and Corresponding Blocks
+
+. . . . . . . . . . . . . . . . . . . . . VALUES . . . . . . . . . . . . . . . . . . . . . .
+
+*InitParaAvail	
+	Define the start simplex. If not flagged, the initial guess is set to (x2+x1)/2 
+	(as in ParaLimits).
+	ParaValue (float)
+		Defines initial guess value
+*ReasonableParaVar
+	Define the start simplex. If not flagged, the variation is set to (x2-x1)/10 
+	(as in ParaLimits).
+	ParaVar (float)
+		Defines variation from initial guess
+
+. . . . . . . . . . . . . . . . . . . . . EXAMPLE . . . . . . . . . . . . . . . . . . . . .
+
+STARTFLAGS
+InitParaAvail := 1
+ReasonableParaVar := 1
+ENDFLAGS
+
+STARTFLAGGED
+ParaValue := 0.14
+ENDFLAGGED
+
+STARTFLAGGED
+ParaVar := 0.00025
+ENDFLAGGED
+
+ENDPARAMETER
+

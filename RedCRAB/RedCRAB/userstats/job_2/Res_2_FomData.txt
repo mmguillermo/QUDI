@@ -1,0 +1,2 @@
+Figure of merit results from optimization:
+[[0.85756107]]

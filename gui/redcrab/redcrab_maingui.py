@@ -24,7 +24,7 @@ import numpy as np
 import os
 import pyqtgraph as pg
 import datetime
-
+import sys
 from core.module import Connector, StatusVar
 from core.util import units
 from gui.colordefs import QudiPalettePale as palette
@@ -128,10 +128,11 @@ class RedCRABGui(GUIBase):
         self._parameters = ParametersTab()
         self._initiation = InitiationTab()
 
+        self._mw.tabWidget.addTab(self._initiation, 'Optimization')
         self._mw.tabWidget.addTab(self._ms, 'Main Settings')
         self._mw.tabWidget.addTab(self._pulses, 'Pulses')
         self._mw.tabWidget.addTab(self._parameters, 'Parameters')
-        self._mw.tabWidget.addTab(self._initiation, 'Optimization')
+        # self._mw.tabWidget.addTab(self._initiation, 'Optimization')
 
         self._pulse_option_modules = []
         self._parameter_option_modules = []
@@ -151,12 +152,17 @@ class RedCRABGui(GUIBase):
 
         self._ms.create_config_pushButton.clicked.connect(self._create_config)
 
-        self._initiation.pset_path_ushButton.clicked.connect(self.select_file)
+        self._initiation.pset_path_pushButton.clicked.connect(self.select_file)
+        self._initiation.create_pushButton.clicked.connect(self._create_files)
+        self._initiation.run_pushButton.clicked.connect(self._run_optimization)
 
         # Load variables
         self._load_main_settings_variables()
         self._load_pulses()
         self._load_parameters()
+        self._load_initiation()
+
+        self.old_path = os.getcwd()
 
         self.show()
         return
@@ -164,9 +170,11 @@ class RedCRABGui(GUIBase):
     def on_deactivate(self):
         """ Deactivate the module
         """
+        os.chdir(self.old_path)
         self._save_main_settings_variables()
         self._save_pulses()
         self._save_parameters()
+        self._save_initiation()
         self._mw.close()
         return
 
@@ -583,6 +591,18 @@ class RedCRABGui(GUIBase):
             parameter_logic.para_number = i + 1
         # print(len(self.redcrabmasterlogic().parameters))
 
+    def _load_initiation(self):
+
+        # LineEdit
+        self._initiation.path_lineEdit.setText(self.redcrabmasterlogic().file_path)
+        self._initiation.module_lineEdit.setText(self.redcrabmasterlogic().file_name)
+
+    def _save_initiation(self):
+
+        # LineEdit
+        self.redcrabmasterlogic().file_path = self._initiation.path_lineEdit.text()
+        self.redcrabmasterlogic().file_name = self._initiation.module_lineEdit.text()
+
     def _reload_parameters(self):
         self._save_parameters()
         self._load_parameters()
@@ -592,8 +612,67 @@ class RedCRABGui(GUIBase):
         self._save_pulses()
         self._save_parameters()
 
+    def _create_files(self):
+        self._save_main_settings_variables()
+        self._save_pulses()
+        self._save_parameters()
+        self.redcrabmasterlogic().create_config(path='RedCRAB/Config/RedCRAB_config/')
+        self._save_initiation()
+        self.redcrabmasterlogic().create_chopped()
+
     def _create_config(self):
         self._save_main_settings_variables()
         self._save_pulses()
         self._save_parameters()
         self.redcrabmasterlogic().create_config()
+
+    def _create_chopped(self):
+        self._save_initiation()
+        self.redcrabmasterlogic().create_chopped()
+
+    def _run_optimization(self):
+        from shutil import copyfile, rmtree
+        # self._create_files()
+        copyfile('RedCRAB/Cfg_5.txt', 'RedCRAB/Config/RedCRAB_config/Cfg_5.txt')
+
+        try:
+            # adds the bin path to the search path for modules
+            sys.path.append(os.path.join(os.getcwd(), "RedCRAB/bin"))
+            # changes working directory
+            os.chdir("./RedCRAB/bin")
+
+            if os.path.isdir('tmp'):
+                print('tmp folder removed')
+                rmtree('tmp')
+
+            # calls redcrab code (slightly messy in python 3)
+            with open("redcrab.py", encoding="utf-8") as f:
+                code = compile(f.read(), "redcrab.py", 'exec')
+                exec(code, globals())
+
+            os.chdir(self.old_path)
+
+            # print('Nothing to do yet')
+            # # adds the bin path to the search path for modules
+            # sys.path.append(os.path.join(os.getcwd(), "RedCRAB/bin"))
+            # # changes working directory
+            # os.chdir("./RedCRAB/bin")
+            #
+            # # calls redcrab code (slightly messy in python 3)
+            # with open("redcrab.py", encoding="utf-8") as f:
+            #     code = compile(f.read(), "redcrab.py", 'exec')
+            #     exec(code, globals())
+
+            # subprocess.call('source activate qudi', shell=True)
+            # subprocess.call('source activate qudi && python RedCRAB/RedCRAB.py', shell=True)
+            # subprocess.call('python3 RedCRAB/RedCRAB.py', shell=True)
+            # subprocess.Popen(['python', 'RedCRAB/RedCRAB.py'], shell=True)
+            # os.system("start cmd")
+            # subprocess.Popen(args=["gnome-terminal", "--command=python RedCRAB/RedCRAB.py"])
+            # subprocess.call('cd RedCRAB && source activate qudi && python RedCRAB/RedCRAB.py', shell=True)
+            # subprocess.call('bash -c "source activate qudi"', shell=True)
+        except:
+            os.chdir(self.old_path)
+            self.log.error('Optimization could not be started!')
+
+

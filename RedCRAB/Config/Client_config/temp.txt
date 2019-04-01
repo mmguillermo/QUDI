@@ -1,0 +1,67 @@
+### Comments:
+### FOMEvaluation is the type of figure of merit evaluation:
+### 0: by python module (needs PyModPath to the python file and PyModName, the name of the module)
+### The module must contain a function named fnct, that takes the RedCRAB pulse(s) (as list of lists) and the time grid as
+### parameters and returns the figure of merit
+### 1: by saving the pulse in the PulsePath file, executing the command in Command and then reading the figure
+### of merit from FOMPath - > the fom must be saved as a float in a text file called fom.txt (standard devaiation as std.txt)
+### 2: by saving the pulse in the PulsePath file and then waiting for an update of the FOMPath file
+### 3: by employing the 'MATLAB Engine API for Python'.
+###
+### ServerWaittime is the time the redcrab client will wait for a server answer (new pulse) until it calles a timeout and exits
+### (in sec., min: 100, max : 18000)
+###
+### UserWaittime is the amount of time the redcrab client will wait for an update of the figure of merit file
+### (in sec., min: 100, max : 86400)
+###
+### AbortCheck is the amount of seconds between consequtive checks if the user aborted the optimization by a stop file
+### (in sec., min : 1, max : 30)
+###
+### ChannelTimeout is the number of seconds until timeout because of no connection
+### (in sec. min. : 10, max : 30)
+###
+### ServerCheckInterval is the amount of seconds between consequtive checks for a pulse on the server 
+### (in sec., min : 0.01, max : 30)
+###
+### UserCheckInterval is the amount of seconds between consequtive checks for a new figure of merit
+### (in sec., min : 0.01, max : 30)
+### 
+### PulseFormat is the seperator between numbers in the pulse files
+### possible are: 0 -> "  ", 1 -> " , ", 2 -> ",  "
+###
+### Pulse Accuracy is the number of decimal places of the pulse
+### (min 2, max. ### 10)
+###
+### MatlabengineRestartInterval is the interval after which the matlab engine will be restarted (if FOMEvaluation == 3)
+### (This is needed when using floating licenses, e.g. at ulm uni the license will be returned after 5 hours, so we restart every ~3h (10000 secs) to avoid program interruptions
+### 
+### Concerning the 'User Specific Paths': Avoid spaces and other unconventional characters in paths (and filenames)!!
+###
++++ Basic Parameters:
+FOMEvaluation := 0
+ServerWaittime := 600
+UserWaittime := 80000
+AbortCheck := 2
+ChannelTimeout := 15
+ServerCheckInterval := 0.3
+UserCheckInterval := 0.5
+LowerThresholdStd := 0.00001
+PulseFormat := 0
+PulseAccuracy := 9
+MatlabengineRestartInterval := 10000
+### Split N-Pulses file into N files for each pulse
+SplitPulsesFile := 1
+### Plot the pulses and FOM 
+DoPlotting := 1 
+###
++++ User Specific Paths:
+### FOME = 0
+PyModPath := /home/thomas/Dropbox/AAA - Uni/A - Python/qudi/RedCRAB/testProblems/RedCRAB_Battle_Algorithms/Qusco_problem_Es2_No_ensemble.py
+PyModName := Qusco_problem_Es2_No_ensemble.py
+### FOME = 1
+Command := cd ../RedCrab_Client/CustomMatlabProgFolder/FOMEvaluation1;./makeIndicFile.out
+### FOME = 2
+PulsePath := /home/marco/MEGA/PhDUlm/Qusco/QuscoSchool/RedCRAB_Tutorial_Lecture/RedCRAB_Client_v1.1.3_Master/PulsesTest/pulse
+FOMPath := /home/marco/MEGA/PhDUlm/Qusco/QuscoSchool/RedCRAB_Tutorial_Lecture/RedCRAB_Client_v1.1.3_Master/FomTest
+### FOME = 3
+MatlabProgPath := Your_path/RedCRAB_Client/CustomMatlabProgFolder

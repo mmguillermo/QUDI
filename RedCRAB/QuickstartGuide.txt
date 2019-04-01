@@ -1,0 +1,139 @@
+RedCRAB Client program
+========================
+
+Prerequisites:
+-------------
+
++++ Python 3.5+ (may work with older versions of the 3.0 branch, but not with 2.7+ branch)
++++ Paramiko 2.1.2+ (may work with older versions, but is unsupported)
++++ numpy 1.12.0+ (may work with older versions, but is unsupported)
++++ matplotlib 2.2.2+ (may work with older versions, but is unsupported)
++++ scipy 1.0.1+ (may work with older versions, but is unsupported)
++++ Hint: The above points are best installed using pip3 (9.0.1+) 
++++ matlab.engine (for fomevaluation = 3, see /Config/Client_config/chopped.txt file and 
+                   https://it.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html 
+                   for more informations)
++++ Stable internet connection
+
+
+Step by Step instructions:
+-------------
+1) Get a key.txt file for your identification as user on the RedCRAB server and put it in the 
+   /Config/Client_config folder.
+
+2) Configure your chopped.txt file located in the /Config/Client_config folder. For details on 
+   the configurations see below for 'Client configuration'
+
+3) Put a RedCRAB config file in the Config/RedCRAB_config folder. Its name has to be of the form:
+   'Cfg_#jobid#.txt' where #jobid# is to be replaced with a job id (a number with at most 8 digits) 
+   you need to give the job for identification
+
+4) Start the RedCRAB.py script (if this does not work for some reason start the redcrab.py script in the 
+   /bin folder)
+
+Once Step 1) and Step 2) are done one can start future for jobs with step 3)
+
+
+Feature Guide:
+-------------
+
++++ Recovery - If you loose connection during a running optimization (or abort the job by a Keyboard Interrupt)
+               a restart will start you off where the optimization left off (provided you fixed the connection problems).
+               You can disable recovery at restart by deleting the /bin/tmp folder if it exists before starting an optimization
+
++++ Flexibiliy - Three different ways available to communicate with a client program for 
+                 figure of merit evaluation (see 'Client configuration')
+
++++ Configurability - Setting timeouts for the program and formats with which the pulses are saved and 
+                      their display accuracy (see 'Client configuration')
+
++++ Detailed event logging - If errors occur you will be notified about their cause and you can react accordingly.
+                             Ane even more detailed log file will be created in your job folder (see 'Where is my data?')
+
+
+Client Configuration:
+-------------
+
+The chopped.txt file in the /Config/Client_config folder provides customization options and contains some
+required setting for the communication of the program with the RedCRAB Client. The file itself is commented, here
+is a short list of someimportant parameters:
+
++++ FOMEvaluation - The most important parrameter. Sets type of figure of merit evaluation. Has three settings: 0, 1 and 2.
+		    Set to 0: Figure of merit evaluation via a python module. The module must contain a function called
+                              fnct(RedCRAB_pulses, time_grid) that takes two arguments. The first one is a list of 
+                              numpy arrays that contains the pulses, the second one is a numpy array, that contains the 
+                              time grid.
+                              ----> Need to set PyModPath to the (full!) path to the python script
+                              ----> Need to set PyModName to the name of the python script (without .py)
+
+		    Set to 1: Figure of merit evaluation via file exchange and calling a bash command.
+			      A file with the pulses and the time grid (first column is the time grid, the following ones
+                              are the pulses) is stored in the file specified by PulsePath (the file does not need to exist
+	                      at optimization start). The command specified in Command is executed and the Client waits for
+                              an update of the file in the FOMPath.
+                              ----> Need to set PulsePath to the (full!) path to where the current pulses + time grid should
+                                    be saved.
+                              ----> Need to set FOMPath to the (full!) path to where your module stores the current 
+                                    evaluated figure of merit after evaluation.
+                              ----> Need to set Command to the command that is to be executed to run your figure of merit 
+                                    evaluation script.
+
+		    Set to 2: Figure of merit evaluation via direct file exchange.
+			      A file with the pulses and the time grid (first column is the time grid, the following ones
+                              are the pulses) is stored in the file specified by PulsePath (the file does not need to exist
+	                      at optimization start). The Client then waits for an update of the file in the FOMPath.
+                              ----> Need to set PulsePath to the (full!) path to where the current pulses + time grid should
+                                    be saved.
+                              ----> Need to set FOMPath to the (full!) path to where your module stores the current 
+                                    evaluated figure of merit after evaluation.
+
++++ PulseFormat - Sets the format with which the Client program stores the pulse files. It specifies the
+                  seperator between different columns. Possible are: 0 -> "  ", 1 -> " , ", 2 -> ",  "
+
++++ PulseAccuracy - Sets the number of decimal places for the pulse stored in files.
+
++++ PyModPath - (full!) path to the python script for FOMEvaluation set to 0
+
++++ PyModName -  Name of the python script (without .py) for FOMEvaluation set to 0
+
++++ PulsePath  - (full!) path to where the current pulses + time grid should be saved for FOMEvaluation set to 1 or 2
+
++++ FOMPath  - (full!) path to where the user evaluated current figure of merit should be saved for 
+               FOMEvaluation set to 1 or 2
+
++++ Command  - Command that is to be executed to run your figure of merit evaluation script for FOMEvaluation set to 1
+
+
+Where is my data?/my config file?
+-------------
+
++++ If you put a (proper) RedCRAB config file in the Config/RedCRAB_config the Client program will create a
+    stats folder with your job id name in the /RedCRAB/userstats directory. It is strongly recommended to use a new job id
+    for each new job that you start. If a job with the same name is found to have an existing folder in the
+    /RedCRAB/userstats the job id of the current will be modified with a timestamp with the current date and time.
+
++++ Your RedCRAB config file will (at the earliest occasion) be stored in your stats folder as well
+
++++ Pulses that the RedCRAB server sent are stored in a subfolder called Pulses, which contains more 
+    subfolders sorted by Superiterations. The Optimal pulses are stored in a subfolder called Opti_Pulses.
+
++++ The figures of merit are stored in two files. One named Res_#jobid#_FomData.txt, which is just a list of all the
+    recieved figures of merit and another one named Res_#jobid#_FullData.txt, that contains additional information
+    (e.g. about suberiterations and function evaluations). Both have your set job id #jobid# in their names.
+
++++ The logs for a job are also found (in a seperate subfolder) in the jobs stats folder.
+
+
+Known issues:
+-------------
+
+Extremly rare and not reproducible bug, in which the Config program stops, because an OSError occurred while
+putting the RedCRAB config file to the server. In this case just wait a little and start a new optimization 
+run with your RedCRAB config file.
+
+
+
+License:
+-------------
+
+

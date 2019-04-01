@@ -1,0 +1,17 @@
+TUTORIAL
+
+Inside the main folder you can find two documentation files, one called "QuickstartGuide.txt" more general about RedCRAB and another one called "Documentation_Cfg.txt" more focus on setting pulses and parameters option. Please read them in order to have a rough idea about how RedCRAB works.
+
+In order to make first steps into RedCrab and check if all settings are correct, I suggest you to run some trivial open-loop optimisations as following:
+
+1) In Config/Client_Config/chopped.txt file set  FOMEvaluation := 0 (this test decouples the experiment and compute the FOM via a test script), modify PyModPath with the correct path. Then, using Cfg_1.txt, run your first optimization.
+
+2) In Config/Client_Config/chopped.txt file set  FOMEvaluation := 2, modify PulsePath and FOMPath with the correct path. In FomTest folder there is a python script called "fom_creation.py" which simulates your experiment: it takes the pulses set from the PulsesTest folder, and computes the figure of merit adding random fluctuations on it. Take a look into the script "fom_creation.py" and modify the paths, and run "fom_creation.py". Finally you should be ready for run your second optimization using for instance Cfg_2.txt .
+
+If all run correctly you should be able to create your Cfg_#.txt file and start with close-loop optimization. Basically "fom_creation.py" should be replaced by your software which takes pulses provided by RedCRAB, inserts them in your experiment, computes figure of merit, and returns it to RedCRAB.
+
+Please don't hesitate to contact me in case you have some questions. Enjoy with RedCrab!
+
+Marco
+
+marco.rossignolo@uni-ulm.de

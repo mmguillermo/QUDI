@@ -1,0 +1,93 @@
+# Open loop Test without Std
+-----Main_Settings-----
+
+STARTPHYSPARS
+TT := 5.00
+Nt := 101
+ENDPHYSPARS
+
+
+STARTALGPARS
+IndividualOutput := 1
+FomFactor2Maximization := -1
+MaxNumSI := 20
+MaxFunctEvSI1 := 100
+MaxFunctEvSI22n := 80
+StdAvailable := 0
+GuessPulsesAvailable := 0
+ENDALGPARS
+
+STARTFLAGS
+FLAGVARIABLET := 0
+FLAGASCCLOSE := 1
+FLAGASCIMPREXPECT := 1
+FLAGSPECIFYREEVALSTEPS := 0
+FLAGISNONEREMOTE := 0
+FLAGISREMOTE := 1
+ENDFLAGS
+
+
+STARTFLAGGED
+ASCCloseAfterRelDist := [50,0.12]
+ENDFLAGGED
+
+STARTFLAGGED
+ASCImprovementExpected := 60
+ENDFLAGGED
+
+#STARTFLAGGED
+#ReEvalSteps := [0.33,0.5,0.501,0.51]
+#ENDFLAGGED
+
+STARTFLAGGED
+TransmissionMethod := 1
+ENDFLAGGED
+
+-----Pulse1-----
+
+STARTPULSE
+
+STARTPHYSPARS
+AmpLimits := [-100.0,100.0]
+ENDPHYSPARS
+
+STARTFLAGS
+InitGuessAvail := 1
+AnalyticGuessInput := 1
+NumericGuessInput := 0
+SelectBasis := 1
+FrequencyRange := 1
+FreqSelectDistr := 1
+ReasonableAmplVar := 1
+ENDFLAGS
+
+STARTFLAGGED
+GuessScaleType := 'abs'
+ENDFLAGGED
+
+STARTFLAGGED
+ContrAmplTime := 'lambda t: 0.0*t + 10.0'
+#ContrAmplTime := 'lambda t: 0.0*t + np.exp(-t)'
+ENDFLAGGED
+
+#STARTFLAGGED
+#ContrAmplTime := [1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 10.10]
+#ENDFLAGGED
+
+STARTFLAGGED
+BasisChoice := 'fourier'
+ENDFLAGGED
+
+STARTFLAGGED
+FreqRange := [0.1,10]
+ENDFLAGGED
+
+STARTFLAGGED
+Wdistr := [1]
+ENDFLAGGED
+
+STARTFLAGGED
+AmplVar := 10.0
+ENDFLAGGED
+
+ENDPULSE

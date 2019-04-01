@@ -1,0 +1,2 @@
+Figure of merit results from optimization:
+2019-03-07 15:44:44, SI=1, It_no=0, Feval_no=1, FOM=[[0.85756107]]

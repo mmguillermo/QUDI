@@ -221,6 +221,10 @@ class RedCRABMasterLogic(GenericLogic):
     saved_pulses = StatusVar('saved_pulses', default=[])
     saved_parameters = StatusVar('saved_parameters', default=[])
 
+    # Path and File for Simulation
+    file_path = StatusVar('file_path', default='RedCRAB/Optimize_NV/')
+    file_name = StatusVar('file_name', default='Test_NV.py')
+
     pulses = []
     parameters = []
     
@@ -504,7 +508,7 @@ class RedCRABMasterLogic(GenericLogic):
 
         file.write('\nENDPARAMETER\n')
 
-    def create_config(self):
+    def create_config(self, path='RedCRAB_Configs/'):
 
         filename = 'Cfg_%i.txt' % self.id_number
 
@@ -512,9 +516,9 @@ class RedCRABMasterLogic(GenericLogic):
             os.mkdir('RedCRAB_Configs')
 
         # create file and overwrite if already exists
-        open('RedCRAB_Configs/' + filename, 'w')
+        open(path + filename, 'w')
 
-        file = open('RedCRAB_Configs/' + filename, 'a')
+        file = open(path + filename, 'a')
 
         self.write_main_settings(file)
 
@@ -523,6 +527,36 @@ class RedCRABMasterLogic(GenericLogic):
         for param in self.parameters:
             self.write_parameters_options(file, param)
         file.close()
+
+    def create_chopped(self):
+
+        path = 'RedCRAB/Config/Client_config/'
+
+        filename = 'chopped.txt'
+
+        try:
+            with open(path + filename) as f:
+                with open(path + 'temp.txt', 'w') as f1:
+                    for line in f:
+                        f1.write(line)
+
+            with open(path + 'temp.txt') as f:
+                with open(path + filename, 'w') as f1:
+                    for line in f:
+                        if line.startswith('PyModPath'):
+                            file_path = str(self.file_path)
+                            if file_path[-1] is not '/':
+                                newline = 'PyModPath := ' + file_path + '/' + str(self.file_name) + '\n'
+                            else:
+                                newline = 'PyModPath := ' + file_path + str(self.file_name) + '\n'
+                            f1.write(line.replace(line, newline))
+                        elif line.startswith('PyModName'):
+                            newline = 'PyModName := ' + str(self.file_name) + '\n'
+                            f1.write(line.replace(line, newline))
+                        else:
+                            f1.write(line)
+        except:
+            self.log.error('Sorry, the chopped file could not be created!')
 
     def save_pulses(self):
         self.saved_pulses = []

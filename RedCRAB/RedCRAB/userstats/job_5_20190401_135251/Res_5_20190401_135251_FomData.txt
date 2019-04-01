@@ -1,0 +1,4 @@
+Figure of merit results from optimization:
+0.0
+0.02062219206020696
+0.06445935074116625

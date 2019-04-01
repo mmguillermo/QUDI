@@ -83,7 +83,7 @@ class Opt_Control(SamplingBase):
         phase_rad = np.pi * self.phase / 180
         # conversion for AWG to actually output the specified voltage (factor two because of AWG), other factor two
         # comes from Rabi probability for transition
-        voltage_factor = 2 * self.voltage * self.Time_2_pi / 2
+        voltage_factor = 2 * self.voltage * self.Time_2_pi
         time = time_array
         bins = len(time_array)
         pulse_time = 10e-9
