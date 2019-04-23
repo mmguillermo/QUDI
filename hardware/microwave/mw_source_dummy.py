@@ -23,6 +23,7 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 import random
 
 from core.module import Base
+from core.util.network import netobtain
 from interface.microwave_interface import MicrowaveInterface
 from interface.microwave_interface import MicrowaveLimits
 from interface.microwave_interface import MicrowaveMode
@@ -164,6 +165,8 @@ class MicrowaveDummy(Base, MicrowaveInterface):
 
         Interleave option is used for arbitrary waveform generator devices.
         """
+        power = netobtain(power)
+        frequency = netobtain(frequency)
         self.log.debug('MicrowaveDummy>set_cw, frequency: {0:f}, power {0:f}:'.format(frequency,
                                                                                       power))
         self.output_active = False
@@ -196,6 +199,8 @@ class MicrowaveDummy(Base, MicrowaveInterface):
 
         @return list, float, str: current frequencies in Hz, current power in dBm, current mode
         """
+        power = netobtain(power)
+        frequency = netobtain(frequency)
         self.log.debug('MicrowaveDummy>set_list, frequency_list: {0}, power: {1:f}'
                        ''.format(frequency, power))
         self.output_active = False
@@ -236,6 +241,10 @@ class MicrowaveDummy(Base, MicrowaveInterface):
                                                  current power in dBm,
                                                  current mode
         """
+        power = netobtain(power)
+        start = netobtain(start)
+        stop = netobtain(stop)
+        step = netobtain(step)
         self.log.debug('MicrowaveDummy>set_sweep, start: {0:f}, stop: {1:f}, step: {2:f}, '
                        'power: {3:f}'.format(start, stop, step, power))
         self.output_active = False
@@ -265,6 +274,8 @@ class MicrowaveDummy(Base, MicrowaveInterface):
 
         @return object: current trigger polarity [TriggerEdge.RISING, TriggerEdge.FALLING]
         """
+        pol = netobtain(pol)
+        timing = netobtain(timing)
         self.log.info('MicrowaveDummy>ext_trigger set')
         self.current_trig_pol = pol
         return self.current_trig_pol, timing
