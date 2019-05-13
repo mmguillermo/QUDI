@@ -56,8 +56,8 @@ DoPlotting := 1
 ###
 +++ User Specific Paths:
 ### FOME = 0
-PyModPath := /home/thomas/Dropbox/AAA - Uni/A - Python/qudi/RedCRAB/testProblems/RedCRAB_Battle_Algorithms/Qusco_problem_Es2_No_ensemble.py
-PyModName := Qusco_problem_Es2_No_ensemble.py
+PyModPath := /home/thomas/Dropbox/AAA - Uni/A - Python/qudi/RedCRAB/Example_Simulation/Example_Simulation.py
+PyModName := Example_Simulation.py
 ### FOME = 1
 Command := cd ../RedCrab_Client/CustomMatlabProgFolder/FOMEvaluation1;./makeIndicFile.out
 ### FOME = 2

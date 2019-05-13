@@ -519,6 +519,7 @@ class RedCRABGui(GUIBase):
             pulse_logic.flag_freq_select_distr_2 = pulse_ui.freq_select_distr_2_checkBox.isChecked()
             pulse_logic.flag_analytic_scaling_fnct_avail = pulse_ui.analytic_scaling_fnct_avail_checkBox.isChecked()
             pulse_logic.flag_init_guess_avail = pulse_ui.init_guess_avail_checkBox.isChecked()
+            pulse_logic.flag_analytic_guess_input = pulse_ui.init_guess_avail_checkBox.isChecked()
 
             # SpinBoxes
             pulse_logic.amp_limit_low = pulse_ui.amp_limit_low_doubleSpinBox.value()
@@ -671,7 +672,9 @@ class RedCRABGui(GUIBase):
 
             os.chdir(self.old_path)
 
+            self.log.info('Optimization finished')
 
+            # self.redcrabmasterlogic().show_end_message()
 
 
 

@@ -348,7 +348,16 @@ class RedCRABMasterLogic(GenericLogic):
         append_txt(file, 'STARTFLAGS')
         main_flag_dict = self.get_main_flag_dict()
         for x in main_flag_dict:
-            append_bool(file, x, main_flag_dict[x])
+            if main_flag_dict[x]:
+                append_bool(file, x, main_flag_dict[x])
+            elif x is 'FLAGVARIABLET':
+                append_bool(file, x, main_flag_dict[x])
+            elif x is 'FLAGSPECIFYREEVALSTEPS':
+                append_bool(file, x, main_flag_dict[x])
+            elif x is 'FLAGISNONEREMOTE':
+                append_bool(file, x, main_flag_dict[x])
+            elif x is 'FLAGISREMOTE':
+                append_bool(file, x, main_flag_dict[x])
         append_txt(file, 'ENDFLAGS\n')
 
         if self.flag_variable_T:
@@ -390,7 +399,19 @@ class RedCRABMasterLogic(GenericLogic):
 
         append_txt(file, 'STARTFLAGS')
         for x in flag_dict:
-            append_bool(file, x, flag_dict[x])
+            if flag_dict[x]:
+                append_bool(file, x, flag_dict[x])
+            elif x is 'InitGuessAvail':
+                append_bool(file, x, flag_dict[x])
+                if flag_dict[x]:
+                    init_guess_avail = True
+            elif x is 'AnalyticGuessInput':
+                if flag_dict['InitGuessAvail']:
+                    append_bool(file, x, flag_dict[x])
+            elif x is 'NumericGuessInput':
+                if flag_dict['InitGuessAvail']:
+                    append_bool(file, x, flag_dict[x])
+
         append_txt(file, 'ENDFLAGS\n')
 
         if flag_dict['SelectBasis']:
@@ -593,3 +614,6 @@ class RedCRABMasterLogic(GenericLogic):
         name = str(len(self.parameters) + 1)
         number = len(self.parameters) + 1
         self.parameters.append(PhysicalParameter(id=id, para_name='Parameter {0!s}'.format(name), para_number=number))
+
+    def show_end_message(self):
+        self.log.info('Optimization finished')
