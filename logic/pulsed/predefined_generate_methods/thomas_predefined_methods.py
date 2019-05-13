@@ -39,20 +39,18 @@ General Pulse Creation Procedure:
 
 
 class BasicPredefinedGenerator(PredefinedGeneratorBase):
-    """
 
-    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     ################################################################################################
     #                             Generation methods for waveforms                                 #
     ################################################################################################
-    def generate_Z_optimal_control_test(self, name='opt_control_test', tau_start=10.0e-9, tau_step=10.0e-9,
-                                        num_of_points_on_res=50, num_of_points_off_res=50, detuning_in_percent=0.0,
-                                        pulse_length=50.0e-9, max_amplitude=1.0, file_name='2018-10-12_-_00_40_58'):
+    def generate_optimal_control_test(self, name='opt_control_test', tau_start=10.0e-9, tau_step=10.0e-9,
+                                      num_of_points_on_res=50, num_of_points_off_res=50, detuning_in_percent=0.0,
+                                      pulse_length=50.0e-9, max_amplitude=1.0, file_name='default_params'):
         """
-
+        Creates the measurement sequence used for fidelity evaluation of optimized pulses
         """
         created_blocks = list()
         created_ensembles = list()
@@ -61,11 +59,13 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         detuned_frequency = self.microwave_frequency*(1+detuning_in_percent/100)
         num_of_guess_pulses = 20
         num_of_opt_pulses = 20
+        num_of_short_pulses = 20
+        max_ampl_factor = 3
 
-        number_of_lasers = num_of_points_on_res + num_of_points_off_res + num_of_guess_pulses
+        number_of_lasers = num_of_points_on_res + num_of_points_off_res + num_of_guess_pulses + num_of_short_pulses  + num_of_opt_pulses
 
         # get tau array for measurement ticks
-        num_of_points = num_of_points_on_res + num_of_points_off_res + num_of_guess_pulses
+        num_of_points = num_of_points_on_res + num_of_points_off_res + num_of_guess_pulses + num_of_short_pulses  + num_of_opt_pulses
         tau_array = tau_start + np.arange(num_of_points) * tau_step
 
         # create the laser_mw elements
@@ -90,6 +90,13 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         delay_element = self._get_delay_gate_element()
 
         guess_pulse_element = self._get_pi_X_pulse_element(length=pulse_length,
+                                                           freq=detuned_frequency,
+                                                           phase=0,
+                                                           voltage=self.microwave_amplitude,
+                                                           Time_2_pi=self.rabi_period,
+                                                           max_voltage=max_amplitude)
+
+        short_pulse_element = self._get_pi_X_pulse_element(length=pulse_length / max_ampl_factor,
                                                            freq=detuned_frequency,
                                                            phase=0,
                                                            voltage=self.microwave_amplitude,
@@ -126,6 +133,13 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         guess_pulse_block.append(waiting_element)
         created_blocks.append(guess_pulse_block)
 
+        short_pulse_block = PulseBlock(name='short_pulse_block')
+        short_pulse_block.append(short_pulse_element)
+        short_pulse_block.append(laser_element)
+        short_pulse_block.append(delay_element)
+        short_pulse_block.append(waiting_element)
+        created_blocks.append(short_pulse_block)
+
         opt_pulse_block = PulseBlock(name='opt_pulse_block')
         opt_pulse_block.append(opt_pulse_element)
         opt_pulse_block.append(laser_element)
@@ -138,6 +152,7 @@ class BasicPredefinedGenerator(PredefinedGeneratorBase):
         block_ensemble.append((rabi_block_on_res.name, num_of_points_on_res - 1))
         block_ensemble.append((rabi_block_off_res.name, num_of_points_off_res - 1))
         block_ensemble.append((guess_pulse_block.name, num_of_guess_pulses - 1))
+        block_ensemble.append((short_pulse_block.name, num_of_short_pulses - 1))
         block_ensemble.append((opt_pulse_block.name, num_of_opt_pulses - 1))
 
         # Create and append sync trigger block if needed
