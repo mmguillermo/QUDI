@@ -279,23 +279,27 @@ class RedCRABGui(GUIBase):
         for pulse_ui in self._pulse_option_modules:
             if pulse_ui.freq_select_distr_checkBox.isChecked():
                 pulse_ui.w_distr_comboBox.setEnabled(True)
-                pulse_ui.mean_value_doubleSpinBox.setEnabled(True)
-                pulse_ui.sigma_doubleSpinBox.setEnabled(True)
+                self.toggle_custom_freq_distr()
+                # pulse_ui.mean_value_doubleSpinBox.setEnabled(True)
+                # pulse_ui.sigma_doubleSpinBox.setEnabled(True)
             else:
                 pulse_ui.w_distr_comboBox.setEnabled(False)
                 pulse_ui.mean_value_doubleSpinBox.setEnabled(False)
                 pulse_ui.sigma_doubleSpinBox.setEnabled(False)
+                pulse_ui.freq_distr_function_lineEdit.setEnabled(False)
 
     def toggle_freq_select_distr_2(self):
         for pulse_ui in self._pulse_option_modules:
             if pulse_ui.freq_select_distr_2_checkBox.isChecked():
                 pulse_ui.w_distr_comboBox_2.setEnabled(True)
-                pulse_ui.mean_value_doubleSpinBox_2.setEnabled(True)
-                pulse_ui.sigma_doubleSpinBox_2.setEnabled(True)
+                self.toggle_custom_freq_distr_2()
+                # pulse_ui.mean_value_doubleSpinBox_2.setEnabled(True)
+                # pulse_ui.sigma_doubleSpinBox_2.setEnabled(True)
             else:
                 pulse_ui.w_distr_comboBox_2.setEnabled(False)
                 pulse_ui.mean_value_doubleSpinBox_2.setEnabled(False)
                 pulse_ui.sigma_doubleSpinBox_2.setEnabled(False)
+                pulse_ui.freq_distr_function_lineEdit_2.setEnabled(False)
 
     def toggle_analytic_scaling_fnct_avail(self):
         for pulse_ui in self._pulse_option_modules:
@@ -320,12 +324,26 @@ class RedCRABGui(GUIBase):
             else:
                 pulse_ui.freq_distr_function_lineEdit.setEnabled(False)
 
+            if pulse_ui.freq_select_distr_checkBox.isChecked() and pulse_ui.w_distr_comboBox.currentIndex() is 1:
+                pulse_ui.mean_value_doubleSpinBox.setEnabled(True)
+                pulse_ui.sigma_doubleSpinBox.setEnabled(True)
+            else:
+                pulse_ui.mean_value_doubleSpinBox.setEnabled(False)
+                pulse_ui.sigma_doubleSpinBox.setEnabled(False)
+
     def toggle_custom_freq_distr_2(self):
         for pulse_ui in self._pulse_option_modules:
             if pulse_ui.freq_select_distr_2_checkBox.isChecked() and pulse_ui.w_distr_comboBox_2.currentIndex() is 2:
                 pulse_ui.freq_distr_function_lineEdit_2.setEnabled(True)
             else:
                 pulse_ui.freq_distr_function_lineEdit_2.setEnabled(False)
+
+            if pulse_ui.freq_select_distr_2_checkBox.isChecked() and pulse_ui.w_distr_comboBox_2.currentIndex() is 1:
+                pulse_ui.mean_value_doubleSpinBox_2.setEnabled(True)
+                pulse_ui.sigma_doubleSpinBox_2.setEnabled(True)
+            else:
+                pulse_ui.mean_value_doubleSpinBox_2.setEnabled(False)
+                pulse_ui.sigma_doubleSpinBox_2.setEnabled(False)
 
     def toggle_para_value(self):
         for para_ui in self._parameter_option_modules:
@@ -632,9 +650,9 @@ class RedCRABGui(GUIBase):
 
     def _run_optimization(self):
         from shutil import copyfile, rmtree
-        # self._create_files()
+        self._create_files()
         self._create_chopped()
-        copyfile('RedCRAB/Cfg_5.txt', 'RedCRAB/Config/RedCRAB_config/Cfg_5.txt')
+        # copyfile('RedCRAB/Cfg_5.txt', 'RedCRAB/Config/RedCRAB_config/Cfg_5.txt')
 
         try:
             # adds the bin path to the search path for modules
@@ -652,6 +670,11 @@ class RedCRABGui(GUIBase):
                 exec(code, globals())
 
             os.chdir(self.old_path)
+
+
+
+
+
 
             # print('Nothing to do yet')
             # # adds the bin path to the search path for modules
